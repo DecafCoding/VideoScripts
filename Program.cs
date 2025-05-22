@@ -24,8 +24,7 @@ namespace VideoScripts
             // Create database context
             using var dbContext = new AppDbContext(dbContextOptions);
             
-            // Ensure database is created (for development only; use migrations in production)
-            dbContext.Database.EnsureCreated();
+            dbContext.Database.Migrate();
 
             // Access configuration values without strongly typed classes
             var greeting = config["AppSettings:Greeting"];
