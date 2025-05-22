@@ -1,4 +1,6 @@
-﻿using Microsoft.Extensions.Configuration;
+﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using VideoScripts.Data;
 
 namespace VideoScripts
 {
@@ -12,6 +14,18 @@ namespace VideoScripts
                 .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
                 .AddJsonFile("appsettings.develop.json", optional: true, reloadOnChange: true)
                 .Build();
+
+            // Configure database context
+            var connectionString = config.GetConnectionString("DefaultConnection");
+            var dbContextOptions = new DbContextOptionsBuilder<AppDbContext>()
+                .UseSqlServer(connectionString)
+                .Options;
+            
+            // Create database context
+            using var dbContext = new AppDbContext(dbContextOptions);
+            
+            // Ensure database is created (for development only; use migrations in production)
+            dbContext.Database.EnsureCreated();
 
             // Access configuration values without strongly typed classes
             var greeting = config["AppSettings:Greeting"];
