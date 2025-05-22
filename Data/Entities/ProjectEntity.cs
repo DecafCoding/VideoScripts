@@ -1,15 +1,19 @@
 ﻿using System.ComponentModel.DataAnnotations;
+using VideoScripts.Data.Common;
 
 namespace VideoScripts.Data.Entities;
 
-public class ProjectEntity
+public class ProjectEntity : BaseEntity
 {
     [Required]
-    public string Name { get; set; }
+    [MaxLength(100)]
+    public string Name { get; set; } = string.Empty;
+    
     [Required]
-    public string Topic { get; set; }
-    // Navigation properties
-    public virtual ICollection<VideoEntity> Videos { get; set; } = new List<VideoEntity>();
-    public virtual ICollection<ScriptEntity> Scripts { get; set; } = new List<ScriptEntity>();
+    [MaxLength(200)]
+    public string Topic { get; set; } = string.Empty;
 
+    // Navigation properties
+    public virtual ICollection<VideoEntity> Videos { get; set; } = [];
+    public virtual ICollection<ScriptEntity> Scripts { get; set; } = [];
 }
