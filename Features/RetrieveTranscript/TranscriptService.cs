@@ -3,12 +3,11 @@ using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 using System.Net.Http.Headers;
 using System.Text;
-
-using VideoScripts.Models;
 using Google.Apis.Util;
 using System.Text.RegularExpressions;
+using VideoScripts.Features.RetrieveTranscript.Models;
 
-namespace SharpAgent.Infrastructure.Services;
+namespace VideoScripts.Features.RetrieveTranscript;
 
 public class TranscriptService
 {
