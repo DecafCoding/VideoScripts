@@ -1,6 +1,9 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using VideoScripts.Data;
+using VideoScripts.Features.YouTube;
 
 namespace VideoScripts
 {
@@ -15,6 +18,11 @@ namespace VideoScripts
                 .AddJsonFile("appsettings.develop.json", optional: true, reloadOnChange: true)
                 .Build();
 
+            // Setup dependency injection
+            var services = new ServiceCollection();
+            ConfigureServices(services, config);
+            var serviceProvider = services.BuildServiceProvider();
+
             // Configure database context
             var connectionString = config.GetConnectionString("DefaultConnection");
             var dbContextOptions = new DbContextOptionsBuilder<AppDbContext>()
@@ -23,8 +31,7 @@ namespace VideoScripts
 
             // Create database context
             using var dbContext = new AppDbContext(dbContextOptions);
-
-            dbContext.Database.Migrate();
+            await dbContext.Database.MigrateAsync();
 
             // Access configuration values
             var greeting = config["AppSettings:Greeting"];
@@ -51,6 +58,9 @@ namespace VideoScripts
                 return;
             }
 
+            // Get YouTube processing handler
+            var youTubeHandler = serviceProvider.GetRequiredService<YouTubeProcessingHandler>();
+
             // Get all unimported rows
             var unimportedRows = googleService.GetUnimportedRows(spreadsheetId);
 
@@ -63,39 +73,67 @@ namespace VideoScripts
             Console.WriteLine($"Found {unimportedRows.Count} unimported row(s):");
             Console.WriteLine(new string('=', 80));
 
-            // Columns to display - now including "Imported"
-            var columns = new[] { "Project Name", "Video 1", "Video 2", "Video 3", "Video 4", "Video 5", "Imported" };
             var processedRowNumbers = new List<int>();
 
             foreach (var (row, rowNumber, headers) in unimportedRows)
             {
-                Console.WriteLine($"\nRow {rowNumber} Data:");
+                Console.WriteLine($"\nProcessing Row {rowNumber}:");
                 Console.WriteLine(new string('-', 40));
 
-                foreach (var col in columns)
+                // Extract project name and video URLs from the row
+                var projectName = GetCellValue(row, headers, "Project Name");
+                var videoUrls = new List<string>
                 {
-                    var idx = headers.IndexOf(col);
-                    var value = (idx >= 0 && idx < row.Count) ? row[idx]?.ToString() : "(empty)";
-                    Console.WriteLine($"{col}: {value}");
+                    GetCellValue(row, headers, "Video 1"),
+                    GetCellValue(row, headers, "Video 2"),
+                    GetCellValue(row, headers, "Video 3"),
+                    GetCellValue(row, headers, "Video 4"),
+                    GetCellValue(row, headers, "Video 5")
+                };
+
+                if (string.IsNullOrWhiteSpace(projectName))
+                {
+                    Console.WriteLine($"Skipping row {rowNumber}: No project name found");
+                    continue;
                 }
 
-                // Here you would typically process the row data
-                // For demonstration, we'll just simulate processing
-                Console.WriteLine("Processing this row...");
+                Console.WriteLine($"Project: {projectName}");
+                Console.WriteLine($"Video URLs: {string.Join(", ", videoUrls.Where(url => !string.IsNullOrWhiteSpace(url)))}");
 
-                // Simulate some processing work
-                await Task.Delay(100);
+                try
+                {
+                    // Process the row using YouTube service
+                    var result = await youTubeHandler.ProcessSheetRowAsync(projectName, videoUrls);
 
-                // Mark this row for import completion
-                processedRowNumbers.Add(rowNumber);
+                    if (result.Success)
+                    {
+                        Console.WriteLine($"✅ Successfully processed {result.ProcessedVideos.Count} videos");
 
-                Console.WriteLine($"Row {rowNumber} processed successfully!");
+                        foreach (var video in result.ProcessedVideos)
+                        {
+                            var status = video.Success ? "✅" : "❌";
+                            Console.WriteLine($"   {status} {video.Title} - {video.Message}");
+                        }
+
+                        processedRowNumbers.Add(rowNumber);
+                    }
+                    else
+                    {
+                        Console.WriteLine($"❌ Failed to process row: {result.ErrorMessage}");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"❌ Error processing row {rowNumber}: {ex.Message}");
+                }
+
+                Console.WriteLine();
             }
 
             // Mark all processed rows as imported in a batch operation
             if (processedRowNumbers.Any())
             {
-                Console.WriteLine($"\nMarking {processedRowNumbers.Count} row(s) as imported...");
+                Console.WriteLine($"Marking {processedRowNumbers.Count} row(s) as imported...");
 
                 var updatedCount = await googleService.MarkRowsAsImportedAsync(
                     spreadsheetId,
@@ -105,7 +143,41 @@ namespace VideoScripts
                 Console.WriteLine($"Successfully marked {updatedCount} cells as imported.");
             }
 
-            Console.WriteLine("\nImport process completed!");
+            Console.WriteLine("\nYouTube processing completed!");
+
+            // Clean up
+            await serviceProvider.DisposeAsync();
+        }
+
+        private static void ConfigureServices(IServiceCollection services, IConfiguration configuration)
+        {
+            // Add logging
+            services.AddLogging(builder =>
+            {
+                builder.AddConsole();
+                builder.SetMinimumLevel(LogLevel.Information);
+            });
+
+            // Add HttpClient
+            services.AddHttpClient();
+
+            // Add our custom services
+            services.AddScoped<YouTubeService>();
+            services.AddScoped<YouTubeProcessingHandler>();
+
+            // Add Entity Framework
+            services.AddDbContext<AppDbContext>(options =>
+                options.UseSqlServer(configuration.GetConnectionString("DefaultConnection")));
+        }
+
+        private static string GetCellValue(IList<object> row, IList<string> headers, string columnName)
+        {
+            var columnIndex = headers.IndexOf(columnName);
+            if (columnIndex >= 0 && columnIndex < row.Count)
+            {
+                return row[columnIndex]?.ToString()?.Trim() ?? string.Empty;
+            }
+            return string.Empty;
         }
     }
 }
