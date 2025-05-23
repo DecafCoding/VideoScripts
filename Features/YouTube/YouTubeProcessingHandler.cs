@@ -13,6 +13,9 @@ public class YouTubeProcessingHandler
     private readonly YouTubeService _youTubeService;
     private readonly ILogger<YouTubeProcessingHandler> _logger;
 
+    // Cache for channels created during this processing session
+    private readonly Dictionary<string, ChannelEntity> _channelCache = new();
+
     public YouTubeProcessingHandler(
         AppDbContext dbContext,
         YouTubeService youTubeService,
@@ -40,6 +43,9 @@ public class YouTubeProcessingHandler
         try
         {
             _logger.LogInformation($"Processing project: {projectName} with {videoUrls.Count} video URLs");
+
+            // Clear channel cache for this processing session
+            _channelCache.Clear();
 
             // Filter out empty URLs
             var validVideoUrls = videoUrls.Where(url => !string.IsNullOrWhiteSpace(url)).ToList();
@@ -189,9 +195,18 @@ public class YouTubeProcessingHandler
 
     /// <summary>
     /// Gets existing channel or creates new one using YouTube API
+    /// Includes cache to prevent duplicate channel creation within the same processing session
     /// </summary>
     private async Task<ChannelEntity> GetOrCreateChannelAsync(YouTubeVideoInfo videoInfo)
     {
+        // First check our local cache
+        if (_channelCache.TryGetValue(videoInfo.ChannelId, out var cachedChannel))
+        {
+            _logger.LogInformation($"Using cached channel: {videoInfo.ChannelTitle}");
+            return cachedChannel;
+        }
+
+        // Check if channel exists in database
         var existingChannel = await _dbContext.Channels
             .FirstOrDefaultAsync(c => c.YTId == videoInfo.ChannelId);
 
@@ -202,12 +217,15 @@ public class YouTubeProcessingHandler
             existingChannel.LastModifiedAt = DateTime.UtcNow;
             existingChannel.LastModifiedBy = "YouTubeProcessingHandler";
 
+            // Add to cache for this processing session
+            _channelCache[videoInfo.ChannelId] = existingChannel;
+
             _logger.LogInformation($"Using existing channel: {videoInfo.ChannelTitle}");
             return existingChannel;
         }
 
-        // Get detailed channel information from YouTube API
-        var channelInfo = await _youTubeService.GetChannelInfoAsync(videoInfo.ChannelId);
+        // Create new channel
+        var channelInfo = await GetChannelInfoFromApiAsync(videoInfo.ChannelId);
 
         var newChannel = new ChannelEntity
         {
@@ -224,9 +242,29 @@ public class YouTubeProcessingHandler
         };
 
         _dbContext.Channels.Add(newChannel);
+
+        // Add to cache for this processing session
+        _channelCache[videoInfo.ChannelId] = newChannel;
+
         _logger.LogInformation($"Created new channel: {newChannel.Title}");
 
         return newChannel;
+    }
+
+    /// <summary>
+    /// Gets detailed channel information from YouTube API with error handling
+    /// </summary>
+    private async Task<YouTubeChannelInfo?> GetChannelInfoFromApiAsync(string channelId)
+    {
+        try
+        {
+            return await _youTubeService.GetChannelInfoAsync(channelId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, $"Failed to get detailed channel info for {channelId}, using basic info from video");
+            return null;
+        }
     }
 
     /// <summary>

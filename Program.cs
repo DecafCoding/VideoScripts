@@ -151,6 +151,8 @@ namespace VideoScripts
 
         private static void ConfigureServices(IServiceCollection services, IConfiguration configuration)
         {
+            services.AddSingleton(configuration);
+
             // Add logging
             services.AddLogging(builder =>
             {
