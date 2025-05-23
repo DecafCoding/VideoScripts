@@ -1,4 +1,4 @@
-﻿namespace VideoScripts.Models;
+﻿namespace VideoScripts.Features.RetrieveTranscript.Models;
 
 public class TranscriptResult
 {
