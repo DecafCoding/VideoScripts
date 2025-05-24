@@ -1,5 +1,4 @@
-﻿// Program.cs
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -40,45 +39,6 @@ namespace VideoScripts
             var environment = config["AppSettings:Environment"];
             Console.WriteLine(greeting);
             Console.WriteLine($"Environment: {environment}");
-            Console.WriteLine();
-
-            // Main menu for choosing operation
-            Console.WriteLine("Select an operation:");
-            Console.WriteLine("1. Process YouTube videos from Google Sheets");
-            Console.WriteLine("2. Retrieve missing transcripts");
-            Console.WriteLine("3. Exit");
-            Console.Write("Enter your choice (1-3): ");
-
-            var choice = Console.ReadLine();
-
-            switch (choice)
-            {
-                case "1":
-                    await ProcessYouTubeVideosFromSheets(config, serviceProvider);
-                    break;
-                case "2":
-                    await ProcessMissingTranscripts(serviceProvider);
-                    break;
-                case "3":
-                    Console.WriteLine("Goodbye!");
-                    break;
-                default:
-                    Console.WriteLine("Invalid choice. Exiting.");
-                    break;
-            }
-
-            // Clean up
-            await serviceProvider.DisposeAsync();
-        }
-
-        /// <summary>
-        /// Processes YouTube videos from Google Sheets (existing functionality)
-        /// </summary>
-        private static async Task ProcessYouTubeVideosFromSheets(IConfiguration config, ServiceProvider serviceProvider)
-        {
-            Console.WriteLine("\n" + new string('=', 80));
-            Console.WriteLine("PROCESSING YOUTUBE VIDEOS FROM GOOGLE SHEETS");
-            Console.WriteLine(new string('=', 80));
 
             // Google Drive/Sheets integration
             var credentialsPath = config["Google:ServiceAccountCredentialsPath"];
@@ -99,8 +59,9 @@ namespace VideoScripts
                 return;
             }
 
-            // Get YouTube processing handler
+            // Get processing handlers
             var youTubeHandler = serviceProvider.GetRequiredService<YouTubeProcessingHandler>();
+            var transcriptHandler = serviceProvider.GetRequiredService<TranscriptProcessingHandler>();
 
             // Get all unimported rows
             var unimportedRows = googleService.GetUnimportedRows(spreadsheetId);
@@ -108,6 +69,16 @@ namespace VideoScripts
             if (!unimportedRows.Any())
             {
                 Console.WriteLine("No unimported rows found in the spreadsheet.");
+
+                // Check if user wants to process transcripts for existing projects
+                Console.WriteLine("\nWould you like to process transcripts for existing projects? (y/n)");
+                var response = Console.ReadLine();
+
+                if (response?.ToLower() == "y")
+                {
+                    await ProcessExistingProjectTranscripts(transcriptHandler, dbContext);
+                }
+
                 return;
             }
 
@@ -115,13 +86,14 @@ namespace VideoScripts
             Console.WriteLine(new string('=', 80));
 
             var processedRowNumbers = new List<int>();
+            var projectsToProcessTranscripts = new List<string>();
 
+            // Process YouTube videos first
             foreach (var (row, rowNumber, headers) in unimportedRows)
             {
                 Console.WriteLine($"\nProcessing Row {rowNumber}:");
                 Console.WriteLine(new string('-', 40));
 
-                // Extract project name and video URLs from the row
                 var projectName = GetCellValue(row, headers, "Project Name");
                 var videoUrls = new List<string>
                 {
@@ -157,6 +129,12 @@ namespace VideoScripts
                         }
 
                         processedRowNumbers.Add(rowNumber);
+
+                        // Add project to transcript processing queue
+                        if (!projectsToProcessTranscripts.Contains(projectName))
+                        {
+                            projectsToProcessTranscripts.Add(projectName);
+                        }
                     }
                     else
                     {
@@ -171,7 +149,7 @@ namespace VideoScripts
                 Console.WriteLine();
             }
 
-            // Mark all processed rows as imported in a batch operation
+            // Mark processed rows as imported
             if (processedRowNumbers.Any())
             {
                 Console.WriteLine($"Marking {processedRowNumbers.Count} row(s) as imported...");
@@ -185,61 +163,24 @@ namespace VideoScripts
             }
 
             Console.WriteLine("\nYouTube processing completed!");
-        }
 
-        /// <summary>
-        /// Processes missing transcripts for videos in the database
-        /// </summary>
-        private static async Task ProcessMissingTranscripts(ServiceProvider serviceProvider)
-        {
-            Console.WriteLine("\n" + new string('=', 80));
-            Console.WriteLine("RETRIEVING MISSING TRANSCRIPTS");
-            Console.WriteLine(new string('=', 80));
-
-            try
+            // Process transcripts for new projects
+            if (projectsToProcessTranscripts.Any())
             {
-                var transcriptHandler = serviceProvider.GetRequiredService<RetrieveTranscriptHandler>();
-                var result = await transcriptHandler.ProcessMissingTranscriptsAsync();
+                Console.WriteLine(new string('=', 80));
+                Console.WriteLine("TRANSCRIPT PROCESSING");
+                Console.WriteLine(new string('=', 80));
 
-                Console.WriteLine($"\nTranscript Processing Results:");
-                Console.WriteLine(new string('-', 50));
-                Console.WriteLine($"Status: {(result.Success ? "✅ SUCCESS" : "❌ FAILED")}");
-                Console.WriteLine($"Message: {result.Message}");
-
-                if (result.TotalVideosProcessed > 0)
+                foreach (var projectName in projectsToProcessTranscripts)
                 {
-                    Console.WriteLine($"Total Videos Processed: {result.TotalVideosProcessed}");
-                    Console.WriteLine($"Successful: {result.SuccessfulTranscripts}");
-                    Console.WriteLine($"Failed: {result.FailedTranscripts}");
-
-                    if (result.VideoResults.Any())
-                    {
-                        Console.WriteLine("\nDetailed Results:");
-                        Console.WriteLine(new string('-', 50));
-
-                        foreach (var videoResult in result.VideoResults)
-                        {
-                            var status = videoResult.Success ? "✅" : "❌";
-                            Console.WriteLine($"{status} {videoResult.VideoTitle} (ID: {videoResult.VideoId})");
-
-                            if (videoResult.Success)
-                            {
-                                Console.WriteLine($"   📝 Transcript Length: {videoResult.TranscriptLength:N0} characters");
-                            }
-                            else
-                            {
-                                Console.WriteLine($"   ❌ Error: {videoResult.ErrorMessage}");
-                            }
-                        }
-                    }
+                    await ProcessProjectTranscripts(transcriptHandler, projectName);
                 }
             }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"❌ Critical error during transcript processing: {ex.Message}");
-            }
 
-            Console.WriteLine("\nTranscript processing completed!");
+            Console.WriteLine("\nAll processing completed!");
+
+            // Clean up
+            await serviceProvider.DisposeAsync();
         }
 
         private static void ConfigureServices(IServiceCollection services, IConfiguration configuration)
@@ -256,15 +197,118 @@ namespace VideoScripts
             // Add HttpClient
             services.AddHttpClient();
 
-            // Add our custom services
-            services.AddScoped<YouTubeService>();
-            services.AddScoped<YouTubeProcessingHandler>();
-            services.AddScoped<TranscriptService>();
-            services.AddScoped<RetrieveTranscriptHandler>();
-
             // Add Entity Framework
             services.AddDbContext<AppDbContext>(options =>
                 options.UseSqlServer(configuration.GetConnectionString("DefaultConnection")));
+
+            // Add YouTube services
+            services.AddScoped<YouTubeService>();
+            services.AddScoped<YouTubeProcessingHandler>();
+
+            // Add Transcript services
+            services.AddScoped<TranscriptService>();
+            services.AddScoped<TranscriptProcessingHandler>();
+        }
+
+        private static async Task ProcessProjectTranscripts(TranscriptProcessingHandler transcriptHandler, string projectName)
+        {
+            Console.WriteLine($"\nProcessing transcripts for project: {projectName}");
+            Console.WriteLine(new string('-', 50));
+
+            try
+            {
+                // Get current status
+                var status = await transcriptHandler.GetProjectTranscriptStatusAsync(projectName);
+
+                if (!status.ProjectExists)
+                {
+                    Console.WriteLine($"❌ Project '{projectName}' not found");
+                    return;
+                }
+
+                Console.WriteLine($"📊 Project Status:");
+                Console.WriteLine($"   Total Videos: {status.TotalVideos}");
+                Console.WriteLine($"   With Transcripts: {status.VideosWithTranscripts}");
+                Console.WriteLine($"   Without Transcripts: {status.VideosWithoutTranscripts}");
+
+                if (status.IsComplete)
+                {
+                    Console.WriteLine($"✅ All videos already have transcripts");
+                    return;
+                }
+
+                // Process transcripts
+                var result = await transcriptHandler.ProcessProjectTranscriptsAsync(projectName);
+
+                if (result.Success)
+                {
+                    Console.WriteLine($"✅ Transcript processing completed:");
+                    Console.WriteLine($"   Successful: {result.SuccessfulCount}");
+                    Console.WriteLine($"   Failed: {result.FailedCount}");
+
+                    // Show details for each video
+                    foreach (var transcript in result.ProcessedTranscripts)
+                    {
+                        var status_icon = transcript.Success ? "✅" : "❌";
+                        var lengthInfo = transcript.Success ? $"({transcript.TranscriptLength} chars)" : "";
+                        Console.WriteLine($"   {status_icon} {transcript.Title} {lengthInfo} - {transcript.Message}");
+                    }
+                }
+                else
+                {
+                    Console.WriteLine($"❌ Transcript processing failed: {result.ErrorMessage}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"❌ Error processing transcripts: {ex.Message}");
+            }
+        }
+
+        private static async Task ProcessExistingProjectTranscripts(TranscriptProcessingHandler transcriptHandler, AppDbContext dbContext)
+        {
+            Console.WriteLine(new string('=', 80));
+            Console.WriteLine("PROCESSING EXISTING PROJECT TRANSCRIPTS");
+            Console.WriteLine(new string('=', 80));
+
+            try
+            {
+                // Get all projects
+                var projects = await dbContext.Projects.ToListAsync();
+
+                if (!projects.Any())
+                {
+                    Console.WriteLine("No projects found in database.");
+                    return;
+                }
+
+                Console.WriteLine($"Found {projects.Count} project(s):");
+
+                foreach (var project in projects)
+                {
+                    // Get status for each project
+                    var status = await transcriptHandler.GetProjectTranscriptStatusAsync(project.Name);
+
+                    Console.WriteLine($"\n📁 {project.Name}:");
+                    Console.WriteLine($"   Total Videos: {status.TotalVideos}");
+                    Console.WriteLine($"   With Transcripts: {status.VideosWithTranscripts}");
+                    Console.WriteLine($"   Without Transcripts: {status.VideosWithoutTranscripts}");
+
+                    if (status.VideosWithoutTranscripts > 0)
+                    {
+                        Console.WriteLine($"   🔄 Processing {status.VideosWithoutTranscripts} video(s)...");
+                        await ProcessProjectTranscripts(transcriptHandler, project.Name);
+                    }
+                    else
+                    {
+                        Console.WriteLine($"   ✅ All videos have transcripts");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"❌ Error processing existing projects: {ex.Message}");
+            }
         }
 
         private static string GetCellValue(IList<object> row, IList<string> headers, string columnName)
