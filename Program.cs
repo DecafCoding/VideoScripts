@@ -1,9 +1,11 @@
-﻿using Microsoft.EntityFrameworkCore;
+﻿// Program.cs
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using VideoScripts.Data;
 using VideoScripts.Features.YouTube;
+using VideoScripts.Features.RetrieveTranscript;
 
 namespace VideoScripts
 {
@@ -38,6 +40,45 @@ namespace VideoScripts
             var environment = config["AppSettings:Environment"];
             Console.WriteLine(greeting);
             Console.WriteLine($"Environment: {environment}");
+            Console.WriteLine();
+
+            // Main menu for choosing operation
+            Console.WriteLine("Select an operation:");
+            Console.WriteLine("1. Process YouTube videos from Google Sheets");
+            Console.WriteLine("2. Retrieve missing transcripts");
+            Console.WriteLine("3. Exit");
+            Console.Write("Enter your choice (1-3): ");
+
+            var choice = Console.ReadLine();
+
+            switch (choice)
+            {
+                case "1":
+                    await ProcessYouTubeVideosFromSheets(config, serviceProvider);
+                    break;
+                case "2":
+                    await ProcessMissingTranscripts(serviceProvider);
+                    break;
+                case "3":
+                    Console.WriteLine("Goodbye!");
+                    break;
+                default:
+                    Console.WriteLine("Invalid choice. Exiting.");
+                    break;
+            }
+
+            // Clean up
+            await serviceProvider.DisposeAsync();
+        }
+
+        /// <summary>
+        /// Processes YouTube videos from Google Sheets (existing functionality)
+        /// </summary>
+        private static async Task ProcessYouTubeVideosFromSheets(IConfiguration config, ServiceProvider serviceProvider)
+        {
+            Console.WriteLine("\n" + new string('=', 80));
+            Console.WriteLine("PROCESSING YOUTUBE VIDEOS FROM GOOGLE SHEETS");
+            Console.WriteLine(new string('=', 80));
 
             // Google Drive/Sheets integration
             var credentialsPath = config["Google:ServiceAccountCredentialsPath"];
@@ -144,9 +185,61 @@ namespace VideoScripts
             }
 
             Console.WriteLine("\nYouTube processing completed!");
+        }
 
-            // Clean up
-            await serviceProvider.DisposeAsync();
+        /// <summary>
+        /// Processes missing transcripts for videos in the database
+        /// </summary>
+        private static async Task ProcessMissingTranscripts(ServiceProvider serviceProvider)
+        {
+            Console.WriteLine("\n" + new string('=', 80));
+            Console.WriteLine("RETRIEVING MISSING TRANSCRIPTS");
+            Console.WriteLine(new string('=', 80));
+
+            try
+            {
+                var transcriptHandler = serviceProvider.GetRequiredService<RetrieveTranscriptHandler>();
+                var result = await transcriptHandler.ProcessMissingTranscriptsAsync();
+
+                Console.WriteLine($"\nTranscript Processing Results:");
+                Console.WriteLine(new string('-', 50));
+                Console.WriteLine($"Status: {(result.Success ? "✅ SUCCESS" : "❌ FAILED")}");
+                Console.WriteLine($"Message: {result.Message}");
+
+                if (result.TotalVideosProcessed > 0)
+                {
+                    Console.WriteLine($"Total Videos Processed: {result.TotalVideosProcessed}");
+                    Console.WriteLine($"Successful: {result.SuccessfulTranscripts}");
+                    Console.WriteLine($"Failed: {result.FailedTranscripts}");
+
+                    if (result.VideoResults.Any())
+                    {
+                        Console.WriteLine("\nDetailed Results:");
+                        Console.WriteLine(new string('-', 50));
+
+                        foreach (var videoResult in result.VideoResults)
+                        {
+                            var status = videoResult.Success ? "✅" : "❌";
+                            Console.WriteLine($"{status} {videoResult.VideoTitle} (ID: {videoResult.VideoId})");
+
+                            if (videoResult.Success)
+                            {
+                                Console.WriteLine($"   📝 Transcript Length: {videoResult.TranscriptLength:N0} characters");
+                            }
+                            else
+                            {
+                                Console.WriteLine($"   ❌ Error: {videoResult.ErrorMessage}");
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"❌ Critical error during transcript processing: {ex.Message}");
+            }
+
+            Console.WriteLine("\nTranscript processing completed!");
         }
 
         private static void ConfigureServices(IServiceCollection services, IConfiguration configuration)
@@ -166,6 +259,8 @@ namespace VideoScripts
             // Add our custom services
             services.AddScoped<YouTubeService>();
             services.AddScoped<YouTubeProcessingHandler>();
+            services.AddScoped<TranscriptService>();
+            services.AddScoped<RetrieveTranscriptHandler>();
 
             // Add Entity Framework
             services.AddDbContext<AppDbContext>(options =>
