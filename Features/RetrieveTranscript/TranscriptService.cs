@@ -1,10 +1,12 @@
-﻿using Microsoft.Extensions.Configuration;
+﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 using System.Net.Http.Headers;
 using System.Text;
-using Google.Apis.Util;
 using System.Text.RegularExpressions;
+using VideoScripts.Data;
+using VideoScripts.Data.Entities;
 using VideoScripts.Features.RetrieveTranscript.Models;
 
 namespace VideoScripts.Features.RetrieveTranscript;
@@ -13,16 +15,19 @@ public class TranscriptService
 {
     private readonly HttpClient _httpClient;
     private readonly ILogger<TranscriptService> _logger;
+    private readonly AppDbContext _dbContext;
     private readonly string _tokenId;
 
     public TranscriptService(
         IConfiguration configuration,
-        ILogger<TranscriptService> logger)
+        ILogger<TranscriptService> logger,
+        AppDbContext dbContext)
     {
         if (configuration == null)
             throw new ArgumentNullException(nameof(configuration));
 
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
 
         _tokenId = configuration["Apify:TokenId"]
             ?? throw new InvalidOperationException("Apify:TokenId configuration is missing");
@@ -32,7 +37,77 @@ public class TranscriptService
         _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _tokenId);
     }
 
-    public async Task<TranscriptResult> ScrapeVideoAsync(string videoUrl)
+    /// <summary>
+    /// Scrapes video transcript and immediately saves it to the database
+    /// </summary>
+    /// <param name="videoUrl">YouTube video URL</param>
+    /// <returns>TranscriptResult with success status and video information</returns>
+    public async Task<TranscriptResult> ScrapeAndSaveVideoAsync(string videoUrl)
+    {
+        try
+        {
+            _logger.LogInformation($"Starting transcript scraping for video: {videoUrl}");
+
+            // Extract video ID from URL
+            var videoId = ExtractVideoIdFromUrl(videoUrl);
+            if (string.IsNullOrEmpty(videoId))
+            {
+                _logger.LogWarning($"Could not extract video ID from URL: {videoUrl}");
+                return CreateFailedResult("Invalid YouTube URL provided");
+            }
+
+            // Check if video exists in database and already has transcript
+            var existingVideo = await _dbContext.Videos
+                .FirstOrDefaultAsync(v => v.YTId == videoId);
+
+            if (existingVideo != null && !string.IsNullOrWhiteSpace(existingVideo.RawTranscript))
+            {
+                _logger.LogInformation($"Video {videoId} already has transcript in database");
+                return CreateSuccessResult(existingVideo);
+            }
+
+            // Scrape the transcript from Apify
+            var transcriptResult = await ScrapeVideoTranscriptAsync(videoUrl);
+
+            // Check if transcript was successfully retrieved
+            if (transcriptResult == null)
+            {
+                _logger.LogWarning($"Failed to retrieve transcript for video: {videoUrl}");
+                return CreateFailedResult("Failed to retrieve transcript from external service");
+            }
+
+            // Check if transcript content is null or empty
+            if (string.IsNullOrWhiteSpace(transcriptResult.Subtitles))
+            {
+                _logger.LogWarning($"Retrieved transcript is null or empty for video: {videoUrl}");
+                return CreateFailedResult("Transcript content is empty or unavailable");
+            }
+
+            // Save transcript to database
+            var savedVideo = await SaveTranscriptToDatabase(transcriptResult, existingVideo);
+
+            if (savedVideo != null)
+            {
+                _logger.LogInformation($"Successfully saved transcript for video: {transcriptResult.Title}");
+                return CreateSuccessResult(savedVideo, transcriptResult);
+            }
+            else
+            {
+                _logger.LogError($"Failed to save transcript to database for video: {videoUrl}");
+                return CreateFailedResult("Failed to save transcript to database");
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, $"Error in ScrapeAndSaveVideoAsync for {videoUrl}: {ex.Message}");
+            return CreateFailedResult($"Processing failed: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Scrapes video transcript from Apify service (original logic preserved)
+    /// </summary>
+    private async Task<TranscriptResult> ScrapeVideoTranscriptAsync(string videoUrl)
     {
         try
         {
@@ -46,12 +121,12 @@ public class TranscriptService
                 subtitlesLanguage = "en",
                 startUrls = new[]
                 {
-                new
-                {
-                    url = videoUrl,
-                    method = "GET"
+                    new
+                    {
+                        url = videoUrl,
+                        method = "GET"
+                    }
                 }
-            }
             };
 
             var content = new StringContent(
@@ -73,8 +148,6 @@ public class TranscriptService
 
             // Get the run ID from the response
             var runResponseContent = await runResponse.Content.ReadAsStringAsync();
-            _logger.LogInformation($"Run response: {runResponseContent}");
-
             var runData = JsonConvert.DeserializeObject<ApifyRunResponse>(runResponseContent);
 
             if (runData?.Data?.Id == null)
@@ -86,26 +159,128 @@ public class TranscriptService
             string runId = runData.Data.Id;
             _logger.LogInformation($"Started Apify run with ID: {runId}");
 
-            // Poll for the run status
+            // Poll for the run status and get results
             return await WaitForRunCompletion(runId, videoUrl);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, $"Error scraping YouTube video {videoUrl}: {ex.Message}");
-            throw;
+            return null;
         }
     }
 
+    /// <summary>
+    /// Saves transcript to database, creating or updating video entity
+    /// </summary>
+    private async Task<VideoEntity> SaveTranscriptToDatabase(TranscriptResult transcriptResult, VideoEntity existingVideo = null)
+    {
+        try
+        {
+            if (existingVideo != null)
+            {
+                // Update existing video with transcript
+                existingVideo.RawTranscript = transcriptResult.Subtitles;
+                existingVideo.LastModifiedAt = DateTime.UtcNow;
+                existingVideo.LastModifiedBy = "TranscriptService";
+
+                _logger.LogInformation($"Updated existing video {existingVideo.YTId} with transcript");
+            }
+            else
+            {
+                _logger.LogWarning($"Video {transcriptResult.VideoId} not found in database. Consider running YouTube processing first.");
+                return null;
+            }
+
+            // Save changes immediately
+            await _dbContext.SaveChangesAsync();
+
+            return existingVideo;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, $"Error saving transcript to database: {ex.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Extracts YouTube video ID from various URL formats
+    /// </summary>
+    private string ExtractVideoIdFromUrl(string url)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+            return string.Empty;
+
+        // If it's already a clean video ID (11 characters, alphanumeric + underscore/hyphen)
+        if (Regex.IsMatch(url, @"^[a-zA-Z0-9_-]{11}$"))
+            return url;
+
+        // Extract from various YouTube URL formats
+        var patterns = new[]
+        {
+            @"(?:youtube\.com/watch\?v=|youtu\.be/|youtube\.com/embed/)([a-zA-Z0-9_-]{11})",
+            @"youtube\.com/v/([a-zA-Z0-9_-]{11})",
+            @"youtube\.com/watch\?.*v=([a-zA-Z0-9_-]{11})"
+        };
+
+        foreach (var pattern in patterns)
+        {
+            var match = Regex.Match(url, pattern);
+            if (match.Success)
+                return match.Groups[1].Value;
+        }
+
+        _logger.LogWarning($"Could not extract video ID from: {url}");
+        return string.Empty;
+    }
+
+    /// <summary>
+    /// Creates a successful TranscriptResult from database video entity
+    /// </summary>
+    private TranscriptResult CreateSuccessResult(VideoEntity video, TranscriptResult originalResult = null)
+    {
+        return new TranscriptResult
+        {
+            Success = true,
+            VideoId = video.YTId,
+            Title = video.Title,
+            Description = video.Description,
+            Subtitles = video.RawTranscript,
+            ViewCount = video.ViewCount,
+            LikeCount = video.LikeCount,
+            CommentCount = video.CommentCount,
+            Duration = video.Duration.ToString(),
+            PublishedAt = video.PublishedAt,
+            // Use original result for channel info if available
+            ChannelId = originalResult?.ChannelId ?? string.Empty,
+            ChannelName = originalResult?.ChannelName ?? string.Empty,
+            ChannelUrl = originalResult?.ChannelUrl ?? string.Empty,
+            SubscriberCount = originalResult?.SubscriberCount ?? 0
+        };
+    }
+
+    /// <summary>
+    /// Creates a failed TranscriptResult with error message
+    /// </summary>
+    private TranscriptResult CreateFailedResult(string errorMessage)
+    {
+        return new TranscriptResult
+        {
+            Success = false,
+            ErrorMessage = errorMessage
+        };
+    }
+
+    // [Rest of the original methods remain unchanged]
     private async Task<TranscriptResult> WaitForRunCompletion(string runId, string videoUrl)
     {
         const int maxAttempts = 30;
-        const int delaySeconds = 5; // Completion tests - 8 to 20 seconds
+        const int delaySeconds = 5;
 
         for (int attempt = 0; attempt < maxAttempts; attempt++)
         {
             try
             {
-                // Check the run status
                 var statusUrl = $"https://api.apify.com/v2/actor-runs/{runId}";
                 var statusResponse = await _httpClient.GetAsync(statusUrl);
 
@@ -123,7 +298,6 @@ public class TranscriptService
 
                 if (statusData?.Data?.Status == "SUCCEEDED")
                 {
-                    // Run completed successfully, get the dataset items
                     return await GetRunResults(runId, videoUrl);
                 }
                 else if (statusData?.Data?.Status == "FAILED" || statusData?.Data?.Status == "ABORTED")
@@ -132,7 +306,6 @@ public class TranscriptService
                     return null;
                 }
 
-                // Still running, wait and try again
                 await Task.Delay(TimeSpan.FromSeconds(delaySeconds));
             }
             catch (Exception ex)
@@ -150,7 +323,6 @@ public class TranscriptService
     {
         try
         {
-            // Get dataset items
             var datasetUrl = $"https://api.apify.com/v2/actor-runs/{runId}/dataset/items";
             var datasetResponse = await _httpClient.GetAsync(datasetUrl);
 
@@ -170,10 +342,18 @@ public class TranscriptService
             }
 
             var videoData = scraperResponse[0];
+            var subtitleContent = GetSubtitleContent(videoData.Subtitles);
 
-            // Map the response to our domain model (same as before)
+            // Check if subtitle content is null or empty
+            if (string.IsNullOrWhiteSpace(subtitleContent))
+            {
+                _logger.LogWarning($"No subtitle content available for video: {videoUrl}");
+                return null;
+            }
+
             var result = new TranscriptResult
             {
+                Success = true,
                 VideoId = videoData.Id,
                 Title = videoData.Title,
                 ChannelId = videoData.ChannelId,
@@ -186,7 +366,7 @@ public class TranscriptService
                 Duration = videoData.Duration,
                 PublishedAt = videoData.Date,
                 Description = videoData.Text,
-                Subtitles = GetSubtitleContent(videoData.Subtitles)
+                Subtitles = subtitleContent
             };
 
             _logger.LogInformation($"Successfully scraped video: {videoUrl}");
@@ -202,62 +382,55 @@ public class TranscriptService
     private string GetSubtitleContent(List<ApifySubtitle> subtitles)
     {
         if (subtitles == null || !subtitles.Any())
+        {
+            _logger.LogInformation("No subtitles available in the response");
             return null;
+        }
 
         // Prefer auto-generated English subtitles
         var subtitle = subtitles.FirstOrDefault(s => s.Language == "en" && s.Type == "auto_generated")
                      ?? subtitles.FirstOrDefault();
 
-        // Canvert SRT into a simpler format for easier reading
-        var simpleSubtitles = ConvertSrtToSimpleFormat(subtitle?.Srt);
+        if (subtitle?.Srt == null)
+        {
+            _logger.LogInformation("No suitable subtitle content found");
+            return null;
+        }
 
+        // Convert SRT into a simpler format for easier reading
+        var simpleSubtitles = ConvertSrtToSimpleFormat(subtitle.Srt);
         return simpleSubtitles;
     }
 
-    /// <summary>
-    /// Converts SRT content into a simpler format that is easeier to read.
-    /// </summary>
-    /// <param name="srtContent">Subtitles in SRT format (used by YouTube)</param>
-    /// <returns></returns>
     private string ConvertSrtToSimpleFormat(string srtContent)
     {
-        // Prepare output StringBuilder
-        StringBuilder simpleOutput = new StringBuilder();
+        if (string.IsNullOrWhiteSpace(srtContent))
+            return null;
 
-        // Split the input by double newlines to get each subtitle entry
+        StringBuilder simpleOutput = new StringBuilder();
         string[] entries = srtContent.Split(new[] { "\n\n" }, StringSplitOptions.RemoveEmptyEntries);
 
         foreach (string entry in entries)
         {
-            // Split each entry into lines
             string[] lines = entry.Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries);
 
-            // Need at least 2 lines (sequence number and timestamp)
             if (lines.Length < 2)
                 continue;
 
-            // Parse the timestamp line (should be the second line)
             string timestampLine = lines[1];
-
-            // Extract the start time using regex
             Match match = Regex.Match(timestampLine, @"(\d+):(\d+):(\d+),\d+");
 
             if (!match.Success)
                 continue;
 
-            // Get the hours, minutes, and seconds as separate groups and pad if needed
             string hours = match.Groups[1].Value.PadLeft(2, '0');
             string minutes = match.Groups[2].Value.PadLeft(2, '0');
             string seconds = match.Groups[3].Value.PadLeft(2, '0');
-
-            // Format the time with padded values
             string formattedTime = $"{hours}:{minutes}:{seconds}";
 
-            // Get the subtitle text (can be multiple lines)
             StringBuilder textBuilder = new StringBuilder();
             for (int i = 2; i < lines.Length; i++)
             {
-                // Skip empty lines or lines with just spaces
                 if (string.IsNullOrWhiteSpace(lines[i]))
                     continue;
 
@@ -266,20 +439,23 @@ public class TranscriptService
 
             string subtitleText = textBuilder.ToString().Trim();
 
-            // Skip entries that only contain spaces or empty text
             if (string.IsNullOrWhiteSpace(subtitleText))
                 continue;
 
-            // Add to output in the format StartTime: Phrase (with space after colon)
             simpleOutput.AppendLine($"{formattedTime}  {subtitleText}");
         }
 
-        return simpleOutput.ToString();
+        var result = simpleOutput.ToString();
+        return string.IsNullOrWhiteSpace(result) ? null : result;
+    }
+
+    public void Dispose()
+    {
+        _httpClient?.Dispose();
     }
 }
 
-// Classes only used by Transcript Service
-
+// Supporting classes remain the same...
 internal class ApifyRunResponse
 {
     public ApifyRunData Data { get; set; }
