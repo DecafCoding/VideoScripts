@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using VideoScripts.Data;
 using VideoScripts.Features.YouTube;
 using VideoScripts.Features.RetrieveTranscript;
+using VideoScripts.Features.TranscriptSummary;
 
 namespace VideoScripts
 {
@@ -62,6 +63,7 @@ namespace VideoScripts
             // Get processing handlers
             var youTubeHandler = serviceProvider.GetRequiredService<YouTubeProcessingHandler>();
             var transcriptHandler = serviceProvider.GetRequiredService<TranscriptProcessingHandler>();
+            var summaryHandler = serviceProvider.GetRequiredService<TranscriptSummaryHandler>();
 
             // Get all unimported rows
             var unimportedRows = googleService.GetUnimportedRows(spreadsheetId);
@@ -70,13 +72,13 @@ namespace VideoScripts
             {
                 Console.WriteLine("No unimported rows found in the spreadsheet.");
 
-                // Check if user wants to process transcripts for existing projects
-                Console.WriteLine("\nWould you like to process transcripts for existing projects? (y/n)");
+                // Check if user wants to process existing projects
+                Console.WriteLine("\nWould you like to process existing projects? (y/n)");
                 var response = Console.ReadLine();
 
                 if (response?.ToLower() == "y")
                 {
-                    await ProcessExistingProjectTranscripts(transcriptHandler, dbContext);
+                    await ProcessExistingProjects(transcriptHandler, summaryHandler, dbContext);
                 }
 
                 return;
@@ -86,7 +88,7 @@ namespace VideoScripts
             Console.WriteLine(new string('=', 80));
 
             var processedRowNumbers = new List<int>();
-            var projectsToProcessTranscripts = new List<string>();
+            var projectsToProcess = new List<string>();
 
             // Process YouTube videos first
             foreach (var (row, rowNumber, headers) in unimportedRows)
@@ -130,10 +132,10 @@ namespace VideoScripts
 
                         processedRowNumbers.Add(rowNumber);
 
-                        // Add project to transcript processing queue
-                        if (!projectsToProcessTranscripts.Contains(projectName))
+                        // Add project to processing queue
+                        if (!projectsToProcess.Contains(projectName))
                         {
-                            projectsToProcessTranscripts.Add(projectName);
+                            projectsToProcess.Add(projectName);
                         }
                     }
                     else
@@ -164,16 +166,12 @@ namespace VideoScripts
 
             Console.WriteLine("\nYouTube processing completed!");
 
-            // Process transcripts for new projects
-            if (projectsToProcessTranscripts.Any())
+            // Process transcripts and summaries for new projects
+            if (projectsToProcess.Any())
             {
-                Console.WriteLine(new string('=', 80));
-                Console.WriteLine("TRANSCRIPT PROCESSING");
-                Console.WriteLine(new string('=', 80));
-
-                foreach (var projectName in projectsToProcessTranscripts)
+                foreach (var projectName in projectsToProcess)
                 {
-                    await ProcessProjectTranscripts(transcriptHandler, projectName);
+                    await ProcessFullProjectPipeline(transcriptHandler, summaryHandler, projectName);
                 }
             }
 
@@ -208,11 +206,37 @@ namespace VideoScripts
             // Add Transcript services
             services.AddScoped<TranscriptService>();
             services.AddScoped<TranscriptProcessingHandler>();
+
+            // Add Summary services
+            services.AddScoped<TranscriptSummaryService>();
+            services.AddScoped<TranscriptSummaryHandler>();
         }
 
+        /// <summary>
+        /// Processes the complete pipeline for a project: transcripts then summaries
+        /// </summary>
+        private static async Task ProcessFullProjectPipeline(
+            TranscriptProcessingHandler transcriptHandler,
+            TranscriptSummaryHandler summaryHandler,
+            string projectName)
+        {
+            Console.WriteLine(new string('=', 80));
+            Console.WriteLine($"PROCESSING PIPELINE FOR PROJECT: {projectName}");
+            Console.WriteLine(new string('=', 80));
+
+            // Step 1: Process transcripts
+            await ProcessProjectTranscripts(transcriptHandler, projectName);
+
+            // Step 2: Process summaries (only after transcripts are complete)
+            await ProcessProjectSummaries(summaryHandler, projectName);
+        }
+
+        /// <summary>
+        /// Processes transcripts for a specific project
+        /// </summary>
         private static async Task ProcessProjectTranscripts(TranscriptProcessingHandler transcriptHandler, string projectName)
         {
-            Console.WriteLine($"\nProcessing transcripts for project: {projectName}");
+            Console.WriteLine($"\n🎬 TRANSCRIPT PROCESSING: {projectName}");
             Console.WriteLine(new string('-', 50));
 
             try
@@ -226,7 +250,7 @@ namespace VideoScripts
                     return;
                 }
 
-                Console.WriteLine($"📊 Project Status:");
+                Console.WriteLine($"📊 Transcript Status:");
                 Console.WriteLine($"   Total Videos: {status.TotalVideos}");
                 Console.WriteLine($"   With Transcripts: {status.VideosWithTranscripts}");
                 Console.WriteLine($"   Without Transcripts: {status.VideosWithoutTranscripts}");
@@ -265,10 +289,89 @@ namespace VideoScripts
             }
         }
 
-        private static async Task ProcessExistingProjectTranscripts(TranscriptProcessingHandler transcriptHandler, AppDbContext dbContext)
+        /// <summary>
+        /// Processes AI summaries for a specific project
+        /// </summary>
+        private static async Task ProcessProjectSummaries(TranscriptSummaryHandler summaryHandler, string projectName)
+        {
+            Console.WriteLine($"\n🤖 AI SUMMARY PROCESSING: {projectName}");
+            Console.WriteLine(new string('-', 50));
+
+            try
+            {
+                // Get current status
+                var status = await summaryHandler.GetProjectSummaryStatusAsync(projectName);
+
+                if (!status.ProjectExists)
+                {
+                    Console.WriteLine($"❌ Project '{projectName}' not found");
+                    return;
+                }
+
+                Console.WriteLine($"📊 Summary Status:");
+                Console.WriteLine($"   Total Videos: {status.TotalVideos}");
+                Console.WriteLine($"   With Transcripts: {status.VideosWithTranscripts}");
+                Console.WriteLine($"   With Summaries: {status.VideosWithSummaries}");
+                Console.WriteLine($"   Needing Summaries: {status.VideosNeedingSummaries}");
+
+                if (status.IsComplete)
+                {
+                    Console.WriteLine($"✅ All videos with transcripts already have summaries");
+                    return;
+                }
+
+                if (status.VideosNeedingSummaries == 0)
+                {
+                    Console.WriteLine($"⚠️ No videos with transcripts found to summarize");
+                    return;
+                }
+
+                // Process summaries
+                var result = await summaryHandler.ProcessProjectSummariesAsync(projectName);
+
+                if (result.Success)
+                {
+                    Console.WriteLine($"✅ Summary processing completed:");
+                    Console.WriteLine($"   Successful: {result.SuccessfulCount}");
+                    Console.WriteLine($"   Failed: {result.FailedCount}");
+
+                    // Show details for each video
+                    foreach (var summary in result.ProcessedSummaries)
+                    {
+                        var status_icon = summary.Success ? "✅" : "❌";
+                        var topicInfo = summary.Success && !string.IsNullOrWhiteSpace(summary.VideoTopic)
+                            ? $"Topic: {summary.VideoTopic.Substring(0, Math.Min(50, summary.VideoTopic.Length))}..."
+                            : "";
+                        var lengthInfo = summary.Success ? $"({summary.SummaryLength} chars)" : "";
+                        Console.WriteLine($"   {status_icon} {summary.Title} {lengthInfo}");
+                        if (!string.IsNullOrWhiteSpace(topicInfo))
+                        {
+                            Console.WriteLine($"       {topicInfo}");
+                        }
+                        Console.WriteLine($"       {summary.Message}");
+                    }
+                }
+                else
+                {
+                    Console.WriteLine($"❌ Summary processing failed: {result.ErrorMessage}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"❌ Error processing summaries: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Processes existing projects for transcripts and summaries
+        /// </summary>
+        private static async Task ProcessExistingProjects(
+            TranscriptProcessingHandler transcriptHandler,
+            TranscriptSummaryHandler summaryHandler,
+            AppDbContext dbContext)
         {
             Console.WriteLine(new string('=', 80));
-            Console.WriteLine("PROCESSING EXISTING PROJECT TRANSCRIPTS");
+            Console.WriteLine("PROCESSING EXISTING PROJECTS");
             Console.WriteLine(new string('=', 80));
 
             try
@@ -286,23 +389,8 @@ namespace VideoScripts
 
                 foreach (var project in projects)
                 {
-                    // Get status for each project
-                    var status = await transcriptHandler.GetProjectTranscriptStatusAsync(project.Name);
-
-                    Console.WriteLine($"\n📁 {project.Name}:");
-                    Console.WriteLine($"   Total Videos: {status.TotalVideos}");
-                    Console.WriteLine($"   With Transcripts: {status.VideosWithTranscripts}");
-                    Console.WriteLine($"   Without Transcripts: {status.VideosWithoutTranscripts}");
-
-                    if (status.VideosWithoutTranscripts > 0)
-                    {
-                        Console.WriteLine($"   🔄 Processing {status.VideosWithoutTranscripts} video(s)...");
-                        await ProcessProjectTranscripts(transcriptHandler, project.Name);
-                    }
-                    else
-                    {
-                        Console.WriteLine($"   ✅ All videos have transcripts");
-                    }
+                    Console.WriteLine($"\n📁 Processing: {project.Name}");
+                    await ProcessFullProjectPipeline(transcriptHandler, summaryHandler, project.Name);
                 }
             }
             catch (Exception ex)
