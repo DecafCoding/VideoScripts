@@ -46,7 +46,7 @@ public class TopicDiscoveryService
 
             _logger.LogInformation($"Analyzing transcript for topic discovery: {videoTitle} ({videoId})");
 
-            // Process transcript in chunks if needed (GPT-4 can handle more but we want to be safe)
+            // Process transcript for API consumption
             var processedTranscript = ProcessTranscriptForApi(transcript);
 
             // Create the analysis request
@@ -91,14 +91,14 @@ public class TopicDiscoveryService
 
         return new TopicDiscoveryOpenAiRequest
         {
-            Model = "gpt-4", // Using GPT-4 for better handling of large transcripts and complex analysis
+            Model = "gpt-4o-mini", // Changed from "gpt-4" to "gpt-4o-mini"
             Messages = new List<TopicDiscoveryOpenAiMessage>
             {
                 new TopicDiscoveryOpenAiMessage { Role = "system", Content = systemPrompt },
                 new TopicDiscoveryOpenAiMessage { Role = "user", Content = userPrompt }
             },
-            MaxTokens = 4000, // Increased for detailed topic breakdown
-            Temperature = 0.2, // Lower temperature for more consistent, structured output
+            MaxTokens = 3000, // Reduced from 4000 - gpt-4o-mini is more efficient
+            Temperature = 0.2, // Keeping low temperature for consistent output
             ResponseFormat = new TopicDiscoveryOpenAiResponseFormat { Type = "json_object" }
         };
     }
@@ -203,80 +203,76 @@ public class TopicDiscoveryService
     }
 
     /// <summary>
-    /// Gets the topic discovery prompt for the OpenAI API
+    /// Gets the optimized topic discovery prompt for GPT-4o-mini
     /// </summary>
     private string GetTopicDiscoveryPrompt()
     {
-        return @"Act as an experienced content strategist who specializes in breaking down educational videos into actionable frameworks and learning modules.
+        return @"You are a content strategist specializing in breaking down educational videos into structured learning modules.
 
-Analyze the following YouTube transcript and break it down into logical subtopics, chapters, and key sections. Focus on the main content and exclude introductory remarks, channel promotions, and concluding statements.
+Analyze the YouTube transcript and identify distinct topics, sections, and key learning points. Focus on main content - skip intros, promotions, and conclusions.
 
-Special Focus Areas:
-• **Blueprints**: Any frameworks, systems, or structured approaches mentioned
-• **Key actionable points**: Specific advice, tips, or recommendations  
-• **Important concepts**: Core ideas, principles, or strategies discussed
+Key Requirements:
+• Identify natural topic transitions and thematic changes
+• Extract frameworks, blueprints, or step-by-step processes
+• Capture actionable insights and key takeaways  
+• Use clear timestamps for each section
+• Focus on valuable, educational content
 
-Instructions:
-1. Identify natural topic transitions and thematic shifts in the content
-2. Extract any blueprints, frameworks, or systematic approaches mentioned
-3. Capture step-by-step processes with clear numbering or sequencing
-4. Highlight key takeaways and actionable insights
-5. Use timestamps to mark the beginning of each new section
-6. Provide concise but comprehensive summaries for each section
+Output as JSON with this exact structure:
 
-Output Format:
-Return the analysis as a JSON object with a 'topics' array:
-
-```json
 {
   ""topics"": [
     {
-      ""starttime"": ""00:00:00"",
-      ""title"": ""Descriptive title of the section"",
-      ""summary"": ""Brief 1-2 sentence overview of what's covered"",
-      ""content"": ""Detailed breakdown including specific points, steps, or framework elements"",
-      ""blueprint_elements"": [""step 1"", ""step 2""] // Only include if applicable, otherwise empty array
+      ""starttime"": ""HH:MM:SS"",
+      ""title"": ""Clear, descriptive section title"",
+      ""summary"": ""1-2 sentence overview of what's covered"",
+      ""content"": ""Detailed breakdown including key points, steps, or concepts"",
+      ""blueprint_elements"": [""step 1"", ""step 2""] // Array of steps/elements if applicable, empty array otherwise
     }
   ]
 }
-```
 
-Additional Notes:
-• If the speaker mentions numbered steps, list them explicitly
-• If there's a framework or blueprint, break down its components clearly
-• Focus on content that provides value to viewers seeking actionable information
-• Maintain the speaker's original terminology and specific language for technical concepts
-• Ensure timestamps are in HH:MM:SS format
-• If no clear timestamp can be determined, use ""00:00:00""";
+Guidelines:
+• Use HH:MM:SS format for timestamps (00:00:00 if unclear)
+• Extract numbered steps or frameworks explicitly
+• Maintain speaker's original terminology for technical concepts
+• Prioritize actionable, educational content
+• Ensure each topic has clear value for learners";
     }
 
     /// <summary>
-    /// Processes transcript for API consumption, handling length and formatting
+    /// Processes transcript for API consumption with 150k token limit
     /// </summary>
     private string ProcessTranscriptForApi(string transcript)
     {
-        // For very long transcripts, we might need to truncate or chunk
-        // GPT-4 can handle quite large inputs but we want to be conservative
-        const int maxCharacters = 200000; // Roughly 2-3 hours of transcript
+        // Target: 150,000 tokens maximum
+        // Rough conversion: 1 token ≈ 4 characters for English text
+        const int maxCharacters = 600000; // ~150k tokens worth of input
 
         if (transcript.Length <= maxCharacters)
+        {
+            _logger.LogInformation($"Processing transcript: {transcript.Length:N0} characters (~{transcript.Length / 4:N0} tokens)");
             return transcript;
+        }
 
-        _logger.LogInformation($"Truncating transcript from {transcript.Length} to {maxCharacters} characters for topic discovery");
+        _logger.LogInformation($"Transcript exceeds limit ({transcript.Length:N0} characters), truncating to {maxCharacters:N0} characters (~150k tokens)");
 
-        // Try to truncate at a sentence or paragraph boundary
+        // Truncate at logical boundaries to preserve content quality
         var truncated = transcript.Substring(0, maxCharacters);
         var lastPeriod = truncated.LastIndexOf(". ");
         var lastNewline = truncated.LastIndexOf("\n");
 
         var bestBreakpoint = Math.Max(lastPeriod, lastNewline);
 
-        if (bestBreakpoint > maxCharacters * 0.8) // Only use boundary if it's not too far back
+        if (bestBreakpoint > maxCharacters * 0.85) // Use boundary if it's reasonable (within 15% of limit)
         {
-            return truncated.Substring(0, bestBreakpoint + 1);
+            var result = truncated.Substring(0, bestBreakpoint + 1);
+            _logger.LogInformation($"Truncated at natural boundary: {result.Length:N0} characters");
+            return result;
         }
 
-        return truncated + "...";
+        _logger.LogInformation($"Truncated at character limit: {maxCharacters:N0} characters");
+        return truncated;
     }
 
     /// <summary>
