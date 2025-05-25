@@ -8,6 +8,7 @@ using VideoScripts.Data;
 using VideoScripts.Features.YouTube;
 using VideoScripts.Features.RetrieveTranscript;
 using VideoScripts.Features.TranscriptSummary;
+using VideoScripts.Features.TopicDiscovery;
 using VideoScripts.Core;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -43,6 +44,10 @@ public static class ServiceConfiguration
         // Add Summary services
         services.AddScoped<TranscriptSummaryService>();
         services.AddScoped<TranscriptSummaryHandler>();
+
+        // Add Topic Discovery services
+        services.AddScoped<TopicDiscoveryService>();
+        services.AddScoped<TopicDiscoveryHandler>();
 
         // Add core orchestration service
         services.AddScoped<ProcessingOrchestrator>();

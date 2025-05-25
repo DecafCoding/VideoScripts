@@ -3,28 +3,32 @@ using VideoScripts.Data;
 using VideoScripts.Features.YouTube;
 using VideoScripts.Features.RetrieveTranscript;
 using VideoScripts.Features.TranscriptSummary;
+using VideoScripts.Features.TopicDiscovery;
 
 namespace VideoScripts.Core;
 
 /// <summary>
-/// Orchestrates the main processing workflow for YouTube videos, transcripts, and summaries
+/// Orchestrates the main processing workflow for YouTube videos, transcripts, topic discovery, and summaries
 /// </summary>
 public class ProcessingOrchestrator
 {
     private readonly AppDbContext _dbContext;
     private readonly YouTubeProcessingHandler _youTubeHandler;
     private readonly TranscriptProcessingHandler _transcriptHandler;
+    private readonly TopicDiscoveryHandler _topicDiscoveryHandler;
     private readonly TranscriptSummaryHandler _summaryHandler;
 
     public ProcessingOrchestrator(
         AppDbContext dbContext,
         YouTubeProcessingHandler youTubeHandler,
         TranscriptProcessingHandler transcriptHandler,
+        TopicDiscoveryHandler topicDiscoveryHandler,
         TranscriptSummaryHandler summaryHandler)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
         _youTubeHandler = youTubeHandler ?? throw new ArgumentNullException(nameof(youTubeHandler));
         _transcriptHandler = transcriptHandler ?? throw new ArgumentNullException(nameof(transcriptHandler));
+        _topicDiscoveryHandler = topicDiscoveryHandler ?? throw new ArgumentNullException(nameof(topicDiscoveryHandler));
         _summaryHandler = summaryHandler ?? throw new ArgumentNullException(nameof(summaryHandler));
     }
 
@@ -128,13 +132,13 @@ public class ProcessingOrchestrator
 
         ConsoleOutput.DisplayInfo("\nYouTube processing completed!");
 
-        // Process transcripts and summaries for new projects
+        // Process transcripts, topic discovery, and summaries for new projects
         if (projectsToProcess.Any())
         {
             foreach (var projectName in projectsToProcess)
             {
                 await ProjectProcessor.ProcessFullProjectPipelineAsync(
-                    _transcriptHandler, _summaryHandler, projectName);
+                    _transcriptHandler, _topicDiscoveryHandler, _summaryHandler, projectName);
             }
         }
     }
@@ -162,7 +166,7 @@ public class ProcessingOrchestrator
     }
 
     /// <summary>
-    /// Processes existing projects for transcripts and summaries
+    /// Processes existing projects for transcripts, topic discovery, and summaries
     /// </summary>
     private async Task ProcessExistingProjectsAsync()
     {
@@ -185,7 +189,7 @@ public class ProcessingOrchestrator
             {
                 Console.WriteLine($"\nProcessing: {project.Name}");
                 await ProjectProcessor.ProcessFullProjectPipelineAsync(
-                    _transcriptHandler, _summaryHandler, project.Name);
+                    _transcriptHandler, _topicDiscoveryHandler, _summaryHandler, project.Name);
             }
         }
         catch (Exception ex)
