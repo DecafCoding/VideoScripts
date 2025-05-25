@@ -244,7 +244,7 @@ Return your summary as a JSON object with the following structure:
     private string TruncateTranscriptIfNeeded(string transcript)
     {
         // Approximate token limit - OpenAI recommends staying well under limits
-        const int maxCharacters = 12000; // Roughly 3000 tokens
+        const int maxCharacters = 100000; // Roughly 1 hr of video transcript
 
         if (transcript.Length <= maxCharacters)
             return transcript;
