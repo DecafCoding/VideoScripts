@@ -1,5 +1,6 @@
 ﻿using VideoScripts.Features.RetrieveTranscript;
 using VideoScripts.Features.TranscriptSummary;
+using VideoScripts.Features.TopicDiscovery;
 
 namespace VideoScripts.Core;
 
@@ -9,10 +10,11 @@ namespace VideoScripts.Core;
 public static class ProjectProcessor
 {
     /// <summary>
-    /// Processes the complete pipeline for a project: transcripts then summaries
+    /// Processes the complete pipeline for a project: transcripts, topic discovery, then summaries
     /// </summary>
     public static async Task ProcessFullProjectPipelineAsync(
         TranscriptProcessingHandler transcriptHandler,
+        TopicDiscoveryHandler topicDiscoveryHandler,
         TranscriptSummaryHandler summaryHandler,
         string projectName)
     {
@@ -21,7 +23,10 @@ public static class ProjectProcessor
         // Step 1: Process transcripts
         await ProcessProjectTranscriptsAsync(transcriptHandler, projectName);
 
-        // Step 2: Process summaries (only after transcripts are complete)
+        // Step 2: Process topic discovery (after transcripts are complete)
+        await ProcessProjectTopicDiscoveryAsync(topicDiscoveryHandler, projectName);
+
+        // Step 3: Process summaries (after transcripts are complete)
         await ProcessProjectSummariesAsync(summaryHandler, projectName);
     }
 
@@ -79,6 +84,71 @@ public static class ProjectProcessor
         catch (Exception ex)
         {
             Console.WriteLine($"Error processing transcripts: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Processes topic discovery for a specific project
+    /// </summary>
+    private static async Task ProcessProjectTopicDiscoveryAsync(TopicDiscoveryHandler topicDiscoveryHandler, string projectName)
+    {
+        ConsoleOutput.DisplaySubsectionHeader($"TOPIC DISCOVERY PROCESSING: {projectName}");
+
+        try
+        {
+            // Get current status
+            var status = await topicDiscoveryHandler.GetProjectTopicStatusAsync(projectName);
+
+            if (!status.ProjectExists)
+            {
+                Console.WriteLine($"Project '{projectName}' not found");
+                return;
+            }
+
+            Console.WriteLine($"  Topic Discovery Status:");
+            Console.WriteLine($"   - Total Videos: {status.TotalVideos}");
+            Console.WriteLine($"   - With Transcripts: {status.VideosWithTranscripts}");
+            Console.WriteLine($"   - With Topics: {status.VideosWithTopics}");
+            Console.WriteLine($"   - Needing Topics: {status.VideosNeedingTopics}");
+            Console.WriteLine($"   - Total Topics: {status.TotalTopicsCount}");
+
+            if (status.IsComplete)
+            {
+                Console.WriteLine($"All videos with transcripts already have topics");
+                return;
+            }
+
+            if (status.VideosNeedingTopics == 0)
+            {
+                Console.WriteLine($"No videos with transcripts found for topic discovery");
+                return;
+            }
+
+            // Process topic discovery
+            var result = await topicDiscoveryHandler.ProcessProjectTopicsAsync(projectName);
+
+            if (result.Success)
+            {
+                Console.WriteLine($"  Topic discovery processing completed:");
+                Console.WriteLine($"   - Successful: {result.SuccessfulCount}");
+                Console.WriteLine($"   - Failed: {result.FailedCount}");
+
+                // Show details for each video
+                foreach (var topicInfo in result.ProcessedTopics)
+                {
+                    var statusIcon = topicInfo.Success ? "✅" : "❌";
+                    var topicCountInfo = topicInfo.Success ? $"({topicInfo.TopicCount} topics)" : "";
+                    Console.WriteLine($"   {statusIcon} {topicInfo.Title} {topicCountInfo} - {topicInfo.Message}");
+                }
+            }
+            else
+            {
+                Console.WriteLine($"Topic discovery processing failed: {result.ErrorMessage}");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error processing topic discovery: {ex.Message}");
         }
     }
 
