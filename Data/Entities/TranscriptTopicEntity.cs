@@ -14,7 +14,7 @@ public class TranscriptTopicEntity : BaseEntity
 
     // Populated from AI output
     public TimeSpan StartTime { get; set; }
-    
+
     [MaxLength(200)]
     public string Title { get; set; } = string.Empty;
 
@@ -27,6 +27,8 @@ public class TranscriptTopicEntity : BaseEntity
 
     public bool IsSelected { get; set; }
 
-    // Navigation property
+    // Navigation properties
     public virtual VideoEntity Video { get; set; } = null!;
+
+    public virtual TopicClusterAssignmentEntity? ClusterAssignment { get; set; }
 }

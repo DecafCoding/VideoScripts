@@ -8,7 +8,7 @@ public class ProjectEntity : BaseEntity
     [Required]
     [MaxLength(100)]
     public string Name { get; set; } = string.Empty;
-    
+
     [Required]
     [MaxLength(200)]
     public string Topic { get; set; } = string.Empty;
@@ -16,4 +16,5 @@ public class ProjectEntity : BaseEntity
     // Navigation properties
     public virtual ICollection<VideoEntity> Videos { get; set; } = [];
     public virtual ICollection<ScriptEntity> Scripts { get; set; } = [];
+    public virtual ICollection<TopicClusterEntity> TopicClusters { get; set; } = [];
 }
