@@ -2,6 +2,10 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Console;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+
 using VideoScripts.Data;
 using VideoScripts.Features.YouTube;
 using VideoScripts.Features.RetrieveTranscript;
@@ -122,7 +126,7 @@ namespace VideoScripts
 
                     if (result.Success)
                     {
-                        Console.WriteLine($"✅ Successfully processed {result.ProcessedVideos.Count} videos");
+                        Console.WriteLine($"Successfully processed {result.ProcessedVideos.Count} videos");
 
                         foreach (var video in result.ProcessedVideos)
                         {
@@ -140,12 +144,12 @@ namespace VideoScripts
                     }
                     else
                     {
-                        Console.WriteLine($"❌ Failed to process row: {result.ErrorMessage}");
+                        Console.WriteLine($"Failed to process row: {result.ErrorMessage}");
                     }
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"❌ Error processing row {rowNumber}: {ex.Message}");
+                    Console.WriteLine($"Error processing row {rowNumber}: {ex.Message}");
                 }
 
                 Console.WriteLine();
@@ -188,8 +192,12 @@ namespace VideoScripts
             // Add logging
             services.AddLogging(builder =>
             {
-                builder.AddConsole();
+                builder.ClearProviders();
+                builder.AddConsoleFormatter<SimpleConsoleFormatter, SimpleConsoleFormatterOptions>();
+                builder.AddConsole(options => options.FormatterName = "simple");
                 builder.SetMinimumLevel(LogLevel.Information);
+                builder.AddFilter("Microsoft.EntityFrameworkCore.Database.Command", LogLevel.Warning);
+                builder.AddFilter("Microsoft.EntityFrameworkCore", LogLevel.Warning);
             });
 
             // Add HttpClient
@@ -210,6 +218,55 @@ namespace VideoScripts
             // Add Summary services
             services.AddScoped<TranscriptSummaryService>();
             services.AddScoped<TranscriptSummaryHandler>();
+        }
+
+        public sealed class SimpleConsoleFormatter : ConsoleFormatter
+        {
+            private readonly SimpleConsoleFormatterOptions _options;
+
+            public SimpleConsoleFormatter(IOptionsMonitor<SimpleConsoleFormatterOptions> options)
+                : base("simple")
+            {
+                _options = options.CurrentValue;
+            }
+
+            public override void Write<TState>(
+                in LogEntry<TState> logEntry,
+                IExternalScopeProvider scopeProvider,
+                TextWriter textWriter)
+            {
+                var logLevel = logEntry.LogLevel;
+                var message = logEntry.Formatter(logEntry.State, logEntry.Exception);
+
+                if (message == null)
+                    return;
+
+                // Simple format: [LEVEL] Message
+                var levelString = GetLogLevelString(logLevel);
+                textWriter.WriteLine($"{levelString} {message}");
+
+                // Write exception if present
+                if (logEntry.Exception != null)
+                {
+                    textWriter.WriteLine($"Exception: {logEntry.Exception}");
+                }
+            }
+
+            private static string GetLogLevelString(LogLevel logLevel) => logLevel switch
+            {
+                LogLevel.Trace => "[TRACE]",
+                LogLevel.Debug => "[DEBUG]",
+                LogLevel.Information => "[INFO]",
+                LogLevel.Warning => "[WARN]",
+                LogLevel.Error => "[ERROR]",
+                LogLevel.Critical => "[CRITICAL]",
+                _ => "[UNKNOWN]"
+            };
+        }
+
+        public class SimpleConsoleFormatterOptions : ConsoleFormatterOptions
+        {
+            // Add any custom options here if needed
         }
 
         /// <summary>
@@ -236,7 +293,7 @@ namespace VideoScripts
         /// </summary>
         private static async Task ProcessProjectTranscripts(TranscriptProcessingHandler transcriptHandler, string projectName)
         {
-            Console.WriteLine($"\n🎬 TRANSCRIPT PROCESSING: {projectName}");
+            Console.WriteLine($"\nTRANSCRIPT PROCESSING: {projectName}");
             Console.WriteLine(new string('-', 50));
 
             try
@@ -246,18 +303,18 @@ namespace VideoScripts
 
                 if (!status.ProjectExists)
                 {
-                    Console.WriteLine($"❌ Project '{projectName}' not found");
+                    Console.WriteLine($"Project '{projectName}' not found");
                     return;
                 }
 
-                Console.WriteLine($"📊 Transcript Status:");
-                Console.WriteLine($"   Total Videos: {status.TotalVideos}");
-                Console.WriteLine($"   With Transcripts: {status.VideosWithTranscripts}");
-                Console.WriteLine($"   Without Transcripts: {status.VideosWithoutTranscripts}");
+                Console.WriteLine($"  Transcript Status:");
+                Console.WriteLine($"   - Total Videos: {status.TotalVideos}");
+                Console.WriteLine($"   - With Transcripts: {status.VideosWithTranscripts}");
+                Console.WriteLine($"   - Without Transcripts: {status.VideosWithoutTranscripts}");
 
                 if (status.IsComplete)
                 {
-                    Console.WriteLine($"✅ All videos already have transcripts");
+                    Console.WriteLine($"All videos already have transcripts");
                     return;
                 }
 
@@ -266,9 +323,9 @@ namespace VideoScripts
 
                 if (result.Success)
                 {
-                    Console.WriteLine($"✅ Transcript processing completed:");
-                    Console.WriteLine($"   Successful: {result.SuccessfulCount}");
-                    Console.WriteLine($"   Failed: {result.FailedCount}");
+                    Console.WriteLine($"  Transcript processing completed:");
+                    Console.WriteLine($"   - Successful: {result.SuccessfulCount}");
+                    Console.WriteLine($"   - Failed: {result.FailedCount}");
 
                     // Show details for each video
                     foreach (var transcript in result.ProcessedTranscripts)
@@ -280,12 +337,12 @@ namespace VideoScripts
                 }
                 else
                 {
-                    Console.WriteLine($"❌ Transcript processing failed: {result.ErrorMessage}");
+                    Console.WriteLine($"Transcript processing failed: {result.ErrorMessage}");
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"❌ Error processing transcripts: {ex.Message}");
+                Console.WriteLine($"Error processing transcripts: {ex.Message}");
             }
         }
 
@@ -294,7 +351,7 @@ namespace VideoScripts
         /// </summary>
         private static async Task ProcessProjectSummaries(TranscriptSummaryHandler summaryHandler, string projectName)
         {
-            Console.WriteLine($"\n🤖 AI SUMMARY PROCESSING: {projectName}");
+            Console.WriteLine($"\n AI SUMMARY PROCESSING: {projectName}");
             Console.WriteLine(new string('-', 50));
 
             try
@@ -304,25 +361,25 @@ namespace VideoScripts
 
                 if (!status.ProjectExists)
                 {
-                    Console.WriteLine($"❌ Project '{projectName}' not found");
+                    Console.WriteLine($"Project '{projectName}' not found");
                     return;
                 }
 
-                Console.WriteLine($"📊 Summary Status:");
-                Console.WriteLine($"   Total Videos: {status.TotalVideos}");
-                Console.WriteLine($"   With Transcripts: {status.VideosWithTranscripts}");
-                Console.WriteLine($"   With Summaries: {status.VideosWithSummaries}");
-                Console.WriteLine($"   Needing Summaries: {status.VideosNeedingSummaries}");
+                Console.WriteLine($" Summary Status:");
+                Console.WriteLine($"  - Total Videos: {status.TotalVideos}");
+                Console.WriteLine($"  - With Transcripts: {status.VideosWithTranscripts}");
+                Console.WriteLine($"  - With Summaries: {status.VideosWithSummaries}");
+                Console.WriteLine($"  - Needing Summaries: {status.VideosNeedingSummaries}");
 
                 if (status.IsComplete)
                 {
-                    Console.WriteLine($"✅ All videos with transcripts already have summaries");
+                    Console.WriteLine($"All videos with transcripts already have summaries");
                     return;
                 }
 
                 if (status.VideosNeedingSummaries == 0)
                 {
-                    Console.WriteLine($"⚠️ No videos with transcripts found to summarize");
+                    Console.WriteLine($"No videos with transcripts found to summarize");
                     return;
                 }
 
@@ -331,14 +388,14 @@ namespace VideoScripts
 
                 if (result.Success)
                 {
-                    Console.WriteLine($"✅ Summary processing completed:");
-                    Console.WriteLine($"   Successful: {result.SuccessfulCount}");
-                    Console.WriteLine($"   Failed: {result.FailedCount}");
+                    Console.WriteLine($" Summary processing completed:");
+                    Console.WriteLine($"  - Successful: {result.SuccessfulCount}");
+                    Console.WriteLine($"  - Failed: {result.FailedCount}");
 
                     // Show details for each video
                     foreach (var summary in result.ProcessedSummaries)
                     {
-                        var status_icon = summary.Success ? "✅" : "❌";
+                        var status_icon = summary.Success ? "✅" : " X ";
                         var topicInfo = summary.Success && !string.IsNullOrWhiteSpace(summary.VideoTopic)
                             ? $"Topic: {summary.VideoTopic.Substring(0, Math.Min(50, summary.VideoTopic.Length))}..."
                             : "";
@@ -353,12 +410,12 @@ namespace VideoScripts
                 }
                 else
                 {
-                    Console.WriteLine($"❌ Summary processing failed: {result.ErrorMessage}");
+                    Console.WriteLine($"Summary processing failed: {result.ErrorMessage}");
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"❌ Error processing summaries: {ex.Message}");
+                Console.WriteLine($"Error processing summaries: {ex.Message}");
             }
         }
 
@@ -389,13 +446,13 @@ namespace VideoScripts
 
                 foreach (var project in projects)
                 {
-                    Console.WriteLine($"\n📁 Processing: {project.Name}");
+                    Console.WriteLine($"\nProcessing: {project.Name}");
                     await ProcessFullProjectPipeline(transcriptHandler, summaryHandler, project.Name);
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"❌ Error processing existing projects: {ex.Message}");
+                Console.WriteLine($"Error processing existing projects: {ex.Message}");
             }
         }
 
