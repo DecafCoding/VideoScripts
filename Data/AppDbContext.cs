@@ -20,6 +20,8 @@ namespace VideoScripts.Data
         public DbSet<VideoEntity> Videos { get; set; }
         public DbSet<ScriptEntity> Scripts { get; set; }
         public DbSet<TranscriptTopicEntity> TranscriptTopics { get; set; }
+        public DbSet<TopicClusterEntity> TopicClusters { get; set; }
+        public DbSet<TopicClusterAssignmentEntity> TopicClusterAssignments { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -79,6 +81,11 @@ namespace VideoScripts.Data
                     .WithOne(s => s.Project)
                     .HasForeignKey(s => s.ProjectId)
                     .OnDelete(DeleteBehavior.Cascade); // Delete scripts when project is deleted
+
+                entity.HasMany(e => e.TopicClusters)
+                    .WithOne(tc => tc.Project)
+                    .HasForeignKey(tc => tc.ProjectId)
+                    .OnDelete(DeleteBehavior.Cascade); // Delete clusters when project is deleted
             });
 
             // Configure VideoEntity
@@ -194,6 +201,76 @@ namespace VideoScripts.Data
                 entity.HasOne(e => e.Video)
                     .WithMany(v => v.TranscriptTopics)
                     .HasForeignKey(e => e.VideoId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasOne(e => e.ClusterAssignment)
+                    .WithOne(ca => ca.TranscriptTopic)
+                    .HasForeignKey<TopicClusterAssignmentEntity>(ca => ca.TranscriptTopicId)
+                    .OnDelete(DeleteBehavior.SetNull); // Allow topics to exist without cluster assignment
+            });
+
+            // Configure TopicClusterEntity
+            modelBuilder.Entity<TopicClusterEntity>(entity =>
+            {
+                entity.HasKey(e => e.Id);
+
+                // Index on ProjectId for project-specific queries
+                entity.HasIndex(e => e.ProjectId)
+                    .HasDatabaseName("IX_TopicClusters_ProjectId");
+
+                // Index on ClusterName for searches
+                entity.HasIndex(e => e.ClusterName)
+                    .HasDatabaseName("IX_TopicClusters_ClusterName");
+
+                // Index on DisplayOrder for ordering
+                entity.HasIndex(e => e.DisplayOrder)
+                    .HasDatabaseName("IX_TopicClusters_DisplayOrder");
+
+                // Composite index for project and display order
+                entity.HasIndex(e => new { e.ProjectId, e.DisplayOrder })
+                    .HasDatabaseName("IX_TopicClusters_Project_DisplayOrder");
+
+                // Soft delete filter
+                entity.HasQueryFilter(e => !e.IsDeleted);
+
+                // Configure relationships
+                entity.HasOne(e => e.Project)
+                    .WithMany(p => p.TopicClusters)
+                    .HasForeignKey(e => e.ProjectId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasMany(e => e.TopicAssignments)
+                    .WithOne(ta => ta.TopicCluster)
+                    .HasForeignKey(ta => ta.TopicClusterId)
+                    .OnDelete(DeleteBehavior.Cascade); // Delete assignments when cluster is deleted
+            });
+
+            // Configure TopicClusterAssignmentEntity
+            modelBuilder.Entity<TopicClusterAssignmentEntity>(entity =>
+            {
+                entity.HasKey(e => e.Id);
+
+                // Index on TopicClusterId for cluster-specific queries
+                entity.HasIndex(e => e.TopicClusterId)
+                    .HasDatabaseName("IX_TopicClusterAssignments_TopicClusterId");
+
+                // Unique constraint on TranscriptTopicId (each topic only in one cluster)
+                entity.HasIndex(e => e.TranscriptTopicId)
+                    .IsUnique()
+                    .HasDatabaseName("IX_TopicClusterAssignments_TranscriptTopicId");
+
+                // Soft delete filter
+                entity.HasQueryFilter(e => !e.IsDeleted);
+
+                // Configure relationships
+                entity.HasOne(e => e.TopicCluster)
+                    .WithMany(tc => tc.TopicAssignments)
+                    .HasForeignKey(e => e.TopicClusterId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasOne(e => e.TranscriptTopic)
+                    .WithOne(tt => tt.ClusterAssignment)
+                    .HasForeignKey<TopicClusterAssignmentEntity>(e => e.TranscriptTopicId)
                     .OnDelete(DeleteBehavior.Cascade);
             });
 

@@ -1,6 +1,7 @@
 ﻿using VideoScripts.Features.RetrieveTranscript;
 using VideoScripts.Features.TranscriptSummary;
 using VideoScripts.Features.TopicDiscovery;
+using VideoScripts.Features.ClusterTopics;
 
 namespace VideoScripts.Core;
 
@@ -15,6 +16,7 @@ public static class ProjectProcessor
     public static async Task ProcessFullProjectPipelineAsync(
         TranscriptProcessingHandler transcriptHandler,
         TopicDiscoveryHandler topicDiscoveryHandler,
+        ClusterTopicsHandler clusterTopicsHandler,
         TranscriptSummaryHandler summaryHandler,
         string projectName)
     {
@@ -28,6 +30,9 @@ public static class ProjectProcessor
 
         // Step 3: Process summaries (after transcripts are complete)
         await ProcessProjectSummariesAsync(summaryHandler, projectName);
+
+        // Step 4: Process topic clustering (after topic discovery is complete)
+        await ProcessProjectClusteringAsync(clusterTopicsHandler, projectName);
     }
 
     /// <summary>
@@ -221,6 +226,74 @@ public static class ProjectProcessor
         catch (Exception ex)
         {
             Console.WriteLine($"Error processing summaries: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Processes topic clustering for a specific project
+    /// </summary>
+    private static async Task ProcessProjectClusteringAsync(ClusterTopicsHandler clusterTopicsHandler, string projectName)
+    {
+        ConsoleOutput.DisplaySubsectionHeader($"TOPIC CLUSTERING PROCESSING: {projectName}");
+
+        try
+        {
+            // Get current status
+            var status = await clusterTopicsHandler.GetProjectClusteringStatusAsync(projectName);
+
+            if (!status.ProjectExists)
+            {
+                Console.WriteLine($"Project '{projectName}' not found");
+                return;
+            }
+
+            Console.WriteLine($"  Topic Clustering Status:");
+            Console.WriteLine($"   - Total Topics: {status.TotalTopics}");
+            Console.WriteLine($"   - Clustered Topics: {status.ClusteredTopics}");
+            Console.WriteLine($"   - Unclustered Topics: {status.UnclusteredTopics}");
+            Console.WriteLine($"   - Total Clusters: {status.TotalClusters}");
+
+            if (status.IsComplete)
+            {
+                Console.WriteLine($"All topics are already clustered");
+                return;
+            }
+
+            if (status.UnclusteredTopics == 0)
+            {
+                Console.WriteLine($"No topics found for clustering");
+                return;
+            }
+
+            // Process topic clustering
+            var result = await clusterTopicsHandler.ProcessProjectClusteringAsync(projectName);
+
+            if (result.Success)
+            {
+                Console.WriteLine($"  Topic clustering processing completed:");
+                Console.WriteLine($"   - Successful: {result.SuccessfulCount}");
+                Console.WriteLine($"   - Failed: {result.FailedCount}");
+
+                // Show details for each cluster
+                foreach (var cluster in result.ProcessedClusters)
+                {
+                    var statusIcon = cluster.Success ? "✅" : "❌";
+                    Console.WriteLine($"   {statusIcon} {cluster.ClusterName} ({cluster.TopicCount} topics)");
+                    Console.WriteLine($"       Order: {cluster.DisplayOrder} - {cluster.Message}");
+                    if (!string.IsNullOrWhiteSpace(cluster.ClusterDescription))
+                    {
+                        Console.WriteLine($"       Description: {cluster.ClusterDescription}");
+                    }
+                }
+            }
+            else
+            {
+                Console.WriteLine($"Topic clustering processing failed: {result.ErrorMessage}");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error processing topic clustering: {ex.Message}");
         }
     }
 }
