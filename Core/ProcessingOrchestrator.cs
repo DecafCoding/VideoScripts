@@ -37,7 +37,7 @@ public class ProcessingOrchestrator
     }
 
     /// <summary>
-    /// Executes the main processing workflow
+    /// Executes the main processing workflow (original method - runs all steps)
     /// </summary>
     public async Task ExecuteMainWorkflowAsync(GoogleDriveService googleService, string spreadsheetId)
     {
@@ -63,8 +63,155 @@ public class ProcessingOrchestrator
         ConsoleOutput.DisplayInfo("\nAll processing completed!");
     }
 
+    #region Individual Processing Methods
+
     /// <summary>
-    /// Processes new rows from Google Sheets
+    /// Processes only Google Sheets import step
+    /// </summary>
+    public async Task ProcessGoogleSheetsImportAsync(GoogleDriveService googleService, string spreadsheetId)
+    {
+        ConsoleOutput.DisplaySectionHeader("GOOGLE SHEETS IMPORT");
+
+        var unimportedRows = googleService.GetUnimportedRows(spreadsheetId);
+
+        if (!unimportedRows.Any())
+        {
+            ConsoleOutput.DisplayInfo("No unimported rows found in the spreadsheet.");
+            return;
+        }
+
+        ConsoleOutput.DisplayInfo($"Found {unimportedRows.Count} unimported row(s):");
+
+        var processedRowNumbers = new List<int>();
+
+        // Process YouTube videos import only
+        foreach (var (row, rowNumber, headers) in unimportedRows)
+        {
+            Console.WriteLine($"\nProcessing Row {rowNumber}:");
+            Console.WriteLine(new string('-', 40));
+
+            var projectName = SheetDataExtractor.GetCellValue(row, headers, "Project Name");
+            var videoUrls = SheetDataExtractor.GetVideoUrls(row, headers);
+
+            if (string.IsNullOrWhiteSpace(projectName))
+            {
+                Console.WriteLine($"Skipping row {rowNumber}: No project name found");
+                continue;
+            }
+
+            Console.WriteLine($"Project: {projectName}");
+            Console.WriteLine($"Video URLs: {string.Join(", ", videoUrls.Where(url => !string.IsNullOrWhiteSpace(url)))}");
+
+            try
+            {
+                var result = await _youTubeHandler.ProcessSheetRowAsync(projectName, videoUrls);
+
+                if (result.Success)
+                {
+                    Console.WriteLine($"Successfully processed {result.ProcessedVideos.Count} videos");
+
+                    foreach (var video in result.ProcessedVideos)
+                    {
+                        var status = video.Success ? "✅" : "❌";
+                        Console.WriteLine($"   {status} {video.Title} - {video.Message}");
+                    }
+
+                    processedRowNumbers.Add(rowNumber);
+                }
+                else
+                {
+                    Console.WriteLine($"Failed to process row: {result.ErrorMessage}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error processing row {rowNumber}: {ex.Message}");
+            }
+        }
+
+        // Mark processed rows as imported
+        await MarkRowsAsImported(googleService, spreadsheetId, processedRowNumbers, unimportedRows);
+        ConsoleOutput.DisplayInfo("Import processing completed!");
+    }
+
+    /// <summary>
+    /// Processes only transcript extraction for a specific project
+    /// </summary>
+    public async Task ProcessTranscriptsForProjectAsync(string projectName)
+    {
+        ConsoleOutput.DisplaySectionHeader($"TRANSCRIPT PROCESSING: {projectName}");
+
+        if (!await ProjectExistsAsync(projectName))
+        {
+            ConsoleOutput.DisplayError($"Project '{projectName}' not found.");
+            return;
+        }
+
+        await ProjectProcessor.ProcessProjectTranscriptsAsync(_transcriptHandler, projectName);
+    }
+
+    /// <summary>
+    /// Processes only topic discovery for a specific project
+    /// </summary>
+    public async Task ProcessTopicDiscoveryForProjectAsync(string projectName)
+    {
+        ConsoleOutput.DisplaySectionHeader($"TOPIC DISCOVERY PROCESSING: {projectName}");
+
+        if (!await ProjectExistsAsync(projectName))
+        {
+            ConsoleOutput.DisplayError($"Project '{projectName}' not found.");
+            return;
+        }
+
+        await ProjectProcessor.ProcessProjectTopicDiscoveryAsync(_topicDiscoveryHandler, projectName);
+    }
+
+    /// <summary>
+    /// Processes only AI summaries for a specific project
+    /// </summary>
+    public async Task ProcessSummariesForProjectAsync(string projectName)
+    {
+        ConsoleOutput.DisplaySectionHeader($"AI SUMMARY PROCESSING: {projectName}");
+
+        if (!await ProjectExistsAsync(projectName))
+        {
+            ConsoleOutput.DisplayError($"Project '{projectName}' not found.");
+            return;
+        }
+
+        await ProjectProcessor.ProcessProjectSummariesAsync(_summaryHandler, projectName);
+    }
+
+    /// <summary>
+    /// Processes only topic clustering for a specific project
+    /// </summary>
+    public async Task ProcessClusteringForProjectAsync(string projectName)
+    {
+        ConsoleOutput.DisplaySectionHeader($"TOPIC CLUSTERING PROCESSING: {projectName}");
+
+        if (!await ProjectExistsAsync(projectName))
+        {
+            ConsoleOutput.DisplayError($"Project '{projectName}' not found.");
+            return;
+        }
+
+        await ProjectProcessor.ProcessProjectClusteringAsync(_clusterTopicsHandler, projectName);
+    }
+
+    #endregion
+
+    #region Helper Methods
+
+    /// <summary>
+    /// Checks if a project exists in the database
+    /// </summary>
+    private async Task<bool> ProjectExistsAsync(string projectName)
+    {
+        return await _dbContext.Projects.AnyAsync(p => p.Name == projectName);
+    }
+
+    /// <summary>
+    /// Processes new rows from Google Sheets (original method)
     /// </summary>
     private async Task ProcessNewRowsAsync(
         GoogleDriveService googleService,
@@ -201,4 +348,6 @@ public class ProcessingOrchestrator
             ConsoleOutput.DisplayError($"Error processing existing projects: {ex.Message}");
         }
     }
+
+    #endregion
 }
