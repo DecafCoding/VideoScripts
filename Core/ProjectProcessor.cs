@@ -38,7 +38,7 @@ public static class ProjectProcessor
     /// <summary>
     /// Processes transcripts for a specific project
     /// </summary>
-    private static async Task ProcessProjectTranscriptsAsync(TranscriptProcessingHandler transcriptHandler, string projectName)
+    public static async Task ProcessProjectTranscriptsAsync(TranscriptProcessingHandler transcriptHandler, string projectName)
     {
         ConsoleOutput.DisplaySubsectionHeader($"TRANSCRIPT PROCESSING: {projectName}");
 
@@ -95,7 +95,7 @@ public static class ProjectProcessor
     /// <summary>
     /// Processes topic discovery for a specific project
     /// </summary>
-    private static async Task ProcessProjectTopicDiscoveryAsync(TopicDiscoveryHandler topicDiscoveryHandler, string projectName)
+    public static async Task ProcessProjectTopicDiscoveryAsync(TopicDiscoveryHandler topicDiscoveryHandler, string projectName)
     {
         ConsoleOutput.DisplaySubsectionHeader($"TOPIC DISCOVERY PROCESSING: {projectName}");
 
@@ -160,7 +160,7 @@ public static class ProjectProcessor
     /// <summary>
     /// Processes AI summaries for a specific project
     /// </summary>
-    private static async Task ProcessProjectSummariesAsync(TranscriptSummaryHandler summaryHandler, string projectName)
+    public static async Task ProcessProjectSummariesAsync(TranscriptSummaryHandler summaryHandler, string projectName)
     {
         ConsoleOutput.DisplaySubsectionHeader($"AI SUMMARY PROCESSING: {projectName}");
 
@@ -232,7 +232,7 @@ public static class ProjectProcessor
     /// <summary>
     /// Processes topic clustering for a specific project
     /// </summary>
-    private static async Task ProcessProjectClusteringAsync(ClusterTopicsHandler clusterTopicsHandler, string projectName)
+    public static async Task ProcessProjectClusteringAsync(ClusterTopicsHandler clusterTopicsHandler, string projectName)
     {
         ConsoleOutput.DisplaySubsectionHeader($"TOPIC CLUSTERING PROCESSING: {projectName}");
 
