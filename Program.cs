@@ -1,8 +1,10 @@
 ﻿using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.EntityFrameworkCore;
 using VideoScripts.Configuration;
 using VideoScripts.Core;
 using VideoScripts.Features.ShowClusters;
+using VideoScripts.Data;
 
 namespace VideoScripts;
 
@@ -118,7 +120,15 @@ internal class Program
         if (string.IsNullOrEmpty(processChoice))
             return;
 
-        var projectName = GetProjectName();
+        // For Google Sheets import, we don't need a project name
+        if (processChoice == "1")
+        {
+            await RunImportProcessAsync(config, serviceProvider);
+            return;
+        }
+
+        // For other processes, get project selection
+        var projectName = await GetProjectNameAsync(serviceProvider);
         if (string.IsNullOrEmpty(projectName))
             return;
 
@@ -126,9 +136,6 @@ internal class Program
 
         switch (processChoice)
         {
-            case "1":
-                await RunImportProcessAsync(config, serviceProvider);
-                break;
             case "2":
                 await processingOrchestrator.ProcessTranscriptsForProjectAsync(projectName);
                 break;
@@ -174,20 +181,116 @@ internal class Program
     }
 
     /// <summary>
-    /// Gets project name from user input
+    /// Gets project name from user by displaying available projects and allowing selection by number
     /// </summary>
-    private static string GetProjectName()
+    private static async Task<string> GetProjectNameAsync(ServiceProvider serviceProvider)
     {
-        Console.WriteLine();
-        var projectName = ConsoleOutput.GetUserInput("Enter project name (or press Enter to cancel):");
+        ConsoleOutput.DisplaySectionHeader("SELECT PROJECT");
 
-        if (string.IsNullOrWhiteSpace(projectName))
+        try
         {
-            Console.WriteLine("Operation cancelled.");
+            // Get database context to retrieve projects
+            using var scope = serviceProvider.CreateScope();
+            var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+            // Get all projects with basic statistics
+            var projects = await dbContext.Projects
+                .Include(p => p.Videos)
+                .ThenInclude(v => v.TranscriptTopics)
+                .Include(p => p.TopicClusters)
+                .Select(p => new ProjectSelectionInfo
+                {
+                    Name = p.Name,
+                    Topic = p.Topic,
+                    VideoCount = p.Videos.Count,
+                    TopicCount = p.Videos.SelectMany(v => v.TranscriptTopics).Count(),
+                    ClusterCount = p.TopicClusters.Count,
+                    CreatedAt = p.CreatedAt
+                })
+                .OrderBy(p => p.Name)
+                .ToListAsync();
+
+            if (!projects.Any())
+            {
+                ConsoleOutput.DisplayInfo("No projects found in database.");
+                ConsoleOutput.DisplayInfo("Please run 'Import Videos from Google Sheets' first to create projects.");
+                Console.WriteLine();
+                ConsoleOutput.GetUserInput("Press Enter to continue...");
+                return string.Empty;
+            }
+
+            // Display available projects
+            Console.WriteLine($"Found {projects.Count} project(s):");
+            Console.WriteLine();
+
+            for (int i = 0; i < projects.Count; i++)
+            {
+                var project = projects[i];
+                var statusInfo = GetProjectStatusDisplay(project);
+
+                Console.WriteLine($"{i + 1}. {project.Name}");
+                Console.WriteLine($"   Topic: {project.Topic}");
+                Console.WriteLine($"   {statusInfo}");
+                Console.WriteLine($"   Created: {project.CreatedAt:yyyy-MM-dd}");
+                Console.WriteLine();
+            }
+
+            // Get user selection
+            while (true)
+            {
+                var input = ConsoleOutput.GetUserInput($"Select a project (1-{projects.Count}) or press Enter to cancel:");
+
+                if (string.IsNullOrWhiteSpace(input))
+                {
+                    Console.WriteLine("Operation cancelled.");
+                    return string.Empty;
+                }
+
+                if (int.TryParse(input, out int selection) && selection >= 1 && selection <= projects.Count)
+                {
+                    var selectedProject = projects[selection - 1];
+                    Console.WriteLine($"Selected: {selectedProject.Name}");
+                    return selectedProject.Name;
+                }
+
+                Console.WriteLine($"Please enter a number between 1 and {projects.Count}, or press Enter to cancel.");
+            }
+        }
+        catch (Exception ex)
+        {
+            ConsoleOutput.DisplayError($"Error retrieving projects: {ex.Message}");
             return string.Empty;
         }
+    }
 
-        return projectName.Trim();
+    /// <summary>
+    /// Gets a display string showing the current processing status of a project
+    /// </summary>
+    private static string GetProjectStatusDisplay(ProjectSelectionInfo project)
+    {
+        var parts = new List<string>();
+
+        parts.Add($"Videos: {project.VideoCount}");
+
+        if (project.TopicCount > 0)
+            parts.Add($"Topics: {project.TopicCount}");
+
+        if (project.ClusterCount > 0)
+            parts.Add($"Clusters: {project.ClusterCount}");
+
+        var status = string.Join(" | ", parts);
+
+        // Add processing status indicator
+        if (project.VideoCount > 0 && project.TopicCount > 0 && project.ClusterCount > 0)
+            status += " ✅ Fully Processed";
+        else if (project.VideoCount > 0 && project.TopicCount > 0)
+            status += " 🔄 Needs Clustering";
+        else if (project.VideoCount > 0)
+            status += " 📝 Needs Processing";
+        else
+            status += " 🆕 New Project";
+
+        return status;
     }
 
     /// <summary>
@@ -238,4 +341,17 @@ internal class Program
         // Execute main processing workflow
         await processingOrchestrator.ExecuteMainWorkflowAsync(googleService, spreadsheetId);
     }
+}
+
+/// <summary>
+/// Helper class for project selection information
+/// </summary>
+public class ProjectSelectionInfo
+{
+    public string Name { get; set; } = string.Empty;
+    public string Topic { get; set; } = string.Empty;
+    public int VideoCount { get; set; }
+    public int TopicCount { get; set; }
+    public int ClusterCount { get; set; }
+    public DateTime CreatedAt { get; set; }
 }
