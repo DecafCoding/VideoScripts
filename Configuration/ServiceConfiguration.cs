@@ -13,6 +13,7 @@ using VideoScripts.Core;
 using Microsoft.Extensions.Logging.Abstractions;
 using VideoScripts.Features.ClusterTopics;
 using VideoScripts.Features.ShowClusters;
+using VideoScripts.Features.AnalyzeClusters;
 
 namespace VideoScripts.Configuration;
 
@@ -58,6 +59,11 @@ public static class ServiceConfiguration
         // Add ShowClusters services
         services.AddScoped<ShowClustersHandler>();
         services.AddScoped<ShowClustersService>();
+
+        // Add AnalyzeClusters services
+        services.AddScoped<AnalyzeClustersService>();
+        services.AddScoped<AnalyzeClustersHandler>();
+        services.AddScoped<AnalyzeClustersDisplayService>();
 
         // Add core orchestration service
         services.AddScoped<ProcessingOrchestrator>();

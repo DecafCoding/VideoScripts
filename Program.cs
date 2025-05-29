@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using VideoScripts.Configuration;
 using VideoScripts.Core;
 using VideoScripts.Features.ShowClusters;
+using VideoScripts.Features.AnalyzeClusters;
 using VideoScripts.Data;
 
 namespace VideoScripts;
@@ -48,9 +49,12 @@ internal class Program
                     await ShowClustersAsync(serviceProvider);
                     break;
                 case "2":
-                    await ProcessAllStepsAsync(config, serviceProvider);
+                    await AnalyzeClustersAsync(serviceProvider);
                     break;
                 case "3":
+                    await ProcessAllStepsAsync(config, serviceProvider);
+                    break;
+                case "4":
                     await RunSpecificProcessAsync(config, serviceProvider);
                     break;
                 case "q":
@@ -75,12 +79,13 @@ internal class Program
         Console.WriteLine("What would you like to do?");
         Console.WriteLine();
         Console.WriteLine("1. View Project Clusters");
-        Console.WriteLine("2. Process All Steps (Import → Transcripts → Topics → Summaries → Clustering)");
-        Console.WriteLine("3. Run Specific Process Step");
+        Console.WriteLine("2. Analyze Cluster Content (AI Analysis)");
+        Console.WriteLine("3. Process All Steps (Import → Transcripts → Topics → Summaries → Clustering)");
+        Console.WriteLine("4. Run Specific Process Step");
         Console.WriteLine("Q. Quit");
         Console.WriteLine();
 
-        return ConsoleOutput.GetUserInput("Enter your choice (1, 2, 3, or Q):") ?? "";
+        return ConsoleOutput.GetUserInput("Enter your choice (1, 2, 3, 4, or Q):") ?? "";
     }
 
     /// <summary>
@@ -90,6 +95,15 @@ internal class Program
     {
         var showClustersService = serviceProvider.GetRequiredService<ShowClustersService>();
         await showClustersService.DisplayClusterMenuAsync();
+    }
+
+    /// <summary>
+    /// Shows cluster analysis using the new analysis service
+    /// </summary>
+    private static async Task AnalyzeClustersAsync(ServiceProvider serviceProvider)
+    {
+        var analyzeClustersService = serviceProvider.GetRequiredService<AnalyzeClustersDisplayService>();
+        await analyzeClustersService.DisplayAnalysisMenuAsync();
     }
 
     /// <summary>
