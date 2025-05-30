@@ -1,12 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using System.Xml.Linq;
-using VideoScripts.Data.Common;
-
-namespace VideoScripts.Features.AnalyzeClusters;
+﻿namespace VideoScripts.Features.AnalyzeClusters;
 
 public static class Prompts
 {
