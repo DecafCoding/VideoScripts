@@ -23,7 +23,7 @@ public static class SheetDataExtractor
     }
 
     /// <summary>
-    /// Extracts all video URLs from a Google Sheets row (Video 1 through Video 5)
+    /// Extracts all video URLs from a Google Sheets row (Video 1 through Video 7)
     /// </summary>
     /// <param name="row">The sheet row data</param>
     /// <param name="headers">Column headers</param>
@@ -36,7 +36,27 @@ public static class SheetDataExtractor
             GetCellValue(row, headers, "Video 2"),
             GetCellValue(row, headers, "Video 3"),
             GetCellValue(row, headers, "Video 4"),
-            GetCellValue(row, headers, "Video 5")
+            GetCellValue(row, headers, "Video 5"),
+            GetCellValue(row, headers, "Video 6"),
+            GetCellValue(row, headers, "Video 7")
         };
+    }
+
+    /// <summary>
+    /// Gets all video column names for validation or reference
+    /// </summary>
+    /// <returns>Array of video column names</returns>
+    public static string[] GetVideoColumnNames()
+    {
+        return new[] { "Video 1", "Video 2", "Video 3", "Video 4", "Video 5", "Video 6", "Video 7" };
+    }
+
+    /// <summary>
+    /// Gets the count of expected video columns
+    /// </summary>
+    /// <returns>Total number of video columns supported</returns>
+    public static int GetVideoColumnCount()
+    {
+        return 7;
     }
 }
