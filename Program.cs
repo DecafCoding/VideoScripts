@@ -6,6 +6,7 @@ using VideoScripts.Core;
 using VideoScripts.Features.ShowClusters;
 using VideoScripts.Features.AnalyzeClusters;
 using VideoScripts.Data;
+using System.Text;
 
 namespace VideoScripts;
 
@@ -13,6 +14,10 @@ internal class Program
 {
     static async Task Main(string[] args)
     {
+        // Enable UTF-8 encoding for console to support emojis
+        Console.OutputEncoding = Encoding.UTF8;
+        Console.InputEncoding = Encoding.UTF8;
+
         // Setup configuration
         var config = ConfigurationSetup.BuildConfiguration();
 
