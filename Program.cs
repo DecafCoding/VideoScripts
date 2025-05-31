@@ -5,6 +5,7 @@ using VideoScripts.Configuration;
 using VideoScripts.Core;
 using VideoScripts.Features.ShowClusters;
 using VideoScripts.Features.AnalyzeClusters;
+using VideoScripts.Features.CreateScript;
 using VideoScripts.Data;
 using System.Text;
 
@@ -57,9 +58,12 @@ internal class Program
                     await AnalyzeClustersAsync(serviceProvider);
                     break;
                 case "3":
-                    await ProcessAllStepsAsync(config, serviceProvider);
+                    await CreateScriptAsync(serviceProvider);
                     break;
                 case "4":
+                    await ProcessAllStepsAsync(config, serviceProvider);
+                    break;
+                case "5":
                     await RunSpecificProcessAsync(config, serviceProvider);
                     break;
                 case "q":
@@ -85,12 +89,13 @@ internal class Program
         Console.WriteLine();
         Console.WriteLine("1. View Project Clusters");
         Console.WriteLine("2. Analyze Cluster Content (AI Analysis)");
-        Console.WriteLine("3. Process All Steps (Import → Transcripts → Topics → Summaries → Clustering)");
-        Console.WriteLine("4. Run Specific Process Step");
+        Console.WriteLine("3. Create Script from Project Videos");
+        Console.WriteLine("4. Process All Steps (Import → Transcripts → Topics → Summaries → Clustering)");
+        Console.WriteLine("5. Run Specific Process Step");
         Console.WriteLine("Q. Quit");
         Console.WriteLine();
 
-        return ConsoleOutput.GetUserInput("Enter your choice (1, 2, 3, 4, or Q):") ?? "";
+        return ConsoleOutput.GetUserInput("Enter your choice (1, 2, 3, 4, 5, or Q):") ?? "";
     }
 
     /// <summary>
@@ -109,6 +114,15 @@ internal class Program
     {
         var analyzeClustersService = serviceProvider.GetRequiredService<AnalyzeClustersDisplayService>();
         await analyzeClustersService.DisplayAnalysisMenuAsync();
+    }
+
+    /// <summary>
+    /// Shows script creation menu using the CreateScript service
+    /// </summary>
+    private static async Task CreateScriptAsync(ServiceProvider serviceProvider)
+    {
+        var createScriptService = serviceProvider.GetRequiredService<CreateScriptDisplayService>();
+        await createScriptService.DisplayCreateScriptMenuAsync();
     }
 
     /// <summary>

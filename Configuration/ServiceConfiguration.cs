@@ -14,6 +14,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using VideoScripts.Features.ClusterTopics;
 using VideoScripts.Features.ShowClusters;
 using VideoScripts.Features.AnalyzeClusters;
+using VideoScripts.Features.CreateScript;
 
 namespace VideoScripts.Configuration;
 
@@ -64,6 +65,11 @@ public static class ServiceConfiguration
         services.AddScoped<AnalyzeClustersService>();
         services.AddScoped<AnalyzeClustersHandler>();
         services.AddScoped<AnalyzeClustersDisplayService>();
+
+        // Add CreateScript services
+        services.AddScoped<CreateScriptService>();
+        services.AddScoped<CreateScriptHandler>();
+        services.AddScoped<CreateScriptDisplayService>();
 
         // Add core orchestration service
         services.AddScoped<ProcessingOrchestrator>();
