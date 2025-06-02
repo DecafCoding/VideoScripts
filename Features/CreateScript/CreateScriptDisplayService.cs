@@ -270,7 +270,7 @@ public class CreateScriptDisplayService
             Console.WriteLine($"Project: {scriptEntity.Project.Name}");
             Console.WriteLine($"Version: {scriptEntity.Version}");
             Console.WriteLine($"Created: {scriptEntity.CreatedAt:yyyy-MM-dd HH:mm}");
-            Console.WriteLine($"Word Count: {CountWords(scriptEntity.Content):N0}");
+            Console.WriteLine($"Word Count: {CreateScriptHandler.CountWords(scriptEntity.Content):N0}");
             Console.WriteLine();
             Console.WriteLine(new string('=', 80));
             Console.WriteLine();
@@ -393,17 +393,5 @@ public class CreateScriptDisplayService
 
             Console.WriteLine($"Please enter a number between 1 and {projectsWithScripts.Count}, or press Enter to cancel.");
         }
-    }
-
-    /// <summary>
-    /// Counts words in a text string
-    /// </summary>
-    private int CountWords(string text)
-    {
-        if (string.IsNullOrWhiteSpace(text))
-            return 0;
-
-        var words = text.Split(new[] { ' ', '\n', '\r', '\t' }, StringSplitOptions.RemoveEmptyEntries);
-        return words.Length;
     }
 }

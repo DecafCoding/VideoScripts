@@ -49,7 +49,7 @@ public class CreateScriptService
             // Create OpenAI request
             var request = new OpenAIRequest
             {
-                Model = "gpt-4.1",
+                Model = "gpt-4o",
                 MaxTokens = 4000,
                 Temperature = 0.7,
                 Messages = new List<OpenAIMessage>

@@ -247,7 +247,7 @@ public class CreateScriptHandler
     /// <summary>
     /// Counts words in a text string
     /// </summary>
-    private int CountWords(string text)
+    public static int CountWords(string text)
     {
         if (string.IsNullOrWhiteSpace(text))
             return 0;
