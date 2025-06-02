@@ -36,8 +36,8 @@ public class CreateScriptService
     /// </summary>
     /// <param name="projectTopic">The project topic to focus the script on</param>
     /// <param name="videoData">List of video titles and their raw transcripts</param>
-    /// <returns>Generated script content</returns>
-    public async Task<string> CreateScriptFromTranscriptsAsync(string projectTopic, List<(string title, string transcript)> videoData)
+    /// <returns>Generated script content and token usage information</returns>
+    public async Task<(string content, OpenAIUsage usage)> CreateScriptFromTranscriptsAsync(string projectTopic, List<(string title, string transcript)> videoData)
     {
         try
         {
@@ -103,8 +103,12 @@ public class CreateScriptService
                 throw new InvalidOperationException("Empty script content generated");
             }
 
-            _logger.LogInformation($"Successfully generated script with {generatedScript.Length} characters");
-            return generatedScript;
+            // Extract token usage information
+            var usage = openAIResponse.Usage ?? new OpenAIUsage();
+
+            _logger.LogInformation($"Successfully generated script with {generatedScript.Length} characters using {usage.TotalTokens} tokens");
+
+            return (generatedScript, usage);
         }
         catch (Exception ex)
         {

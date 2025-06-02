@@ -149,6 +149,11 @@ public class CreateScriptDisplayService
                 Console.WriteLine($"Estimated Speaking Time: {result.EstimatedMinutes:F1} minutes");
                 Console.WriteLine($"Source Videos: {result.TranscriptCount}");
                 Console.WriteLine();
+                Console.WriteLine("Token Usage:");
+                Console.WriteLine($"  Prompt Tokens: {result.PromptTokens:N0}");
+                Console.WriteLine($"  Completion Tokens: {result.CompletionTokens:N0}");
+                Console.WriteLine($"  Total Tokens: {result.TotalTokens:N0}");
+                Console.WriteLine();
                 Console.WriteLine("Source Video Titles:");
                 foreach (var title in result.VideoTitles)
                 {
@@ -198,6 +203,7 @@ public class CreateScriptDisplayService
                 Console.WriteLine($"📄 {script.Title}");
                 Console.WriteLine($"   Version: {script.Version}");
                 Console.WriteLine($"   Word Count: {script.WordCount:N0}");
+                Console.WriteLine($"   Token Usage: {script.TotalTokens:N0} tokens (Prompt: {script.PromptTokens:N0}, Completion: {script.CompletionTokens:N0})");
                 Console.WriteLine($"   Created: {script.CreatedAt:yyyy-MM-dd HH:mm}");
                 Console.WriteLine($"   Created By: {script.CreatedBy}");
                 Console.WriteLine();
@@ -271,6 +277,7 @@ public class CreateScriptDisplayService
             Console.WriteLine($"Version: {scriptEntity.Version}");
             Console.WriteLine($"Created: {scriptEntity.CreatedAt:yyyy-MM-dd HH:mm}");
             Console.WriteLine($"Word Count: {CreateScriptHandler.CountWords(scriptEntity.Content):N0}");
+            Console.WriteLine($"Token Usage: {scriptEntity.TotalTokens:N0} tokens (Prompt: {scriptEntity.PromptTokens:N0}, Completion: {scriptEntity.CompletionTokens:N0})");
             Console.WriteLine();
             Console.WriteLine(new string('=', 80));
             Console.WriteLine();
