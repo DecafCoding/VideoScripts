@@ -77,20 +77,23 @@ public class CreateScriptHandler
             // Create script title
             var scriptTitle = customTitle ?? GenerateScriptTitle(project.Name, project.Topic, nextVersion);
 
-            // Generate script using AI service
-            var scriptContent = await _createScriptService.CreateScriptFromTranscriptsAsync(project.Topic, videoData);
+            // Generate script using AI service and capture token usage
+            var (scriptContent, tokenUsage) = await _createScriptService.CreateScriptFromTranscriptsAsync(project.Topic, videoData);
 
             // Calculate script statistics
             var wordCount = CountWords(scriptContent);
             var estimatedMinutes = wordCount / 150.0; // Assuming 150 words per minute speaking rate
 
-            // Save script to database
+            // Save script to database with token usage information
             var scriptEntity = new ScriptEntity
             {
                 ProjectId = project.Id,
                 Title = scriptTitle,
                 Content = scriptContent,
                 Version = nextVersion,
+                PromptTokens = tokenUsage.PromptTokens,
+                CompletionTokens = tokenUsage.CompletionTokens,
+                TotalTokens = tokenUsage.TotalTokens,
                 CreatedBy = "CreateScriptHandler",
                 LastModifiedBy = "CreateScriptHandler"
             };
@@ -107,8 +110,11 @@ public class CreateScriptHandler
             result.EstimatedMinutes = estimatedMinutes;
             result.VideoTitles = videosWithTranscripts.Select(v => v.Title).ToList();
             result.TranscriptCount = videosWithTranscripts.Count;
+            result.PromptTokens = tokenUsage.PromptTokens;
+            result.CompletionTokens = tokenUsage.CompletionTokens;
+            result.TotalTokens = tokenUsage.TotalTokens;
 
-            _logger.LogInformation($"Successfully created script '{scriptTitle}' with {wordCount} words");
+            _logger.LogInformation($"Successfully created script '{scriptTitle}' with {wordCount} words using {tokenUsage.TotalTokens} tokens");
             return result;
         }
         catch (Exception ex)
@@ -139,6 +145,9 @@ public class CreateScriptHandler
                     Title = s.Title,
                     Version = s.Version,
                     WordCount = CountWords(s.Content),
+                    PromptTokens = s.PromptTokens,
+                    CompletionTokens = s.CompletionTokens,
+                    TotalTokens = s.TotalTokens,
                     CreatedAt = s.CreatedAt,
                     CreatedBy = s.CreatedBy
                 })
@@ -266,6 +275,9 @@ public class ScriptSummaryInfo
     public string Title { get; set; } = string.Empty;
     public int Version { get; set; }
     public int WordCount { get; set; }
+    public int PromptTokens { get; set; }
+    public int CompletionTokens { get; set; }
+    public int TotalTokens { get; set; }
     public DateTime CreatedAt { get; set; }
     public string CreatedBy { get; set; } = string.Empty;
 }

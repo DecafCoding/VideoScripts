@@ -17,6 +17,11 @@ public class ScriptCreationResult
     public double EstimatedMinutes { get; set; }
     public List<string> VideoTitles { get; set; } = new List<string>();
     public int TranscriptCount { get; set; }
+
+    // Token usage information
+    public int PromptTokens { get; set; }
+    public int CompletionTokens { get; set; }
+    public int TotalTokens { get; set; }
 }
 
 /// <summary>
@@ -57,6 +62,9 @@ internal class OpenAIResponse
     [JsonProperty("choices")]
     public List<OpenAIChoice> Choices { get; set; } = new List<OpenAIChoice>();
 
+    [JsonProperty("usage")]
+    public OpenAIUsage? Usage { get; set; }
+
     [JsonProperty("error")]
     public OpenAIError? Error { get; set; }
 }
@@ -68,6 +76,21 @@ internal class OpenAIChoice
 {
     [JsonProperty("message")]
     public OpenAIMessage Message { get; set; } = new OpenAIMessage();
+}
+
+/// <summary>
+/// Usage model for OpenAI API response (token tracking)
+/// </summary>
+public class OpenAIUsage
+{
+    [JsonProperty("prompt_tokens")]
+    public int PromptTokens { get; set; }
+
+    [JsonProperty("completion_tokens")]
+    public int CompletionTokens { get; set; }
+
+    [JsonProperty("total_tokens")]
+    public int TotalTokens { get; set; }
 }
 
 /// <summary>
