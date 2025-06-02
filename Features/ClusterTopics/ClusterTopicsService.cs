@@ -243,20 +243,19 @@ public class ClusterTopicsService
     {
         return @"You are an expert content strategist specializing in organizing educational content into logical learning modules.
 
-Your task is to analyze a list of video transcript topics and group them into 3-6 meaningful clusters that would make sense for script generation and content organization.
+Your task is to analyze a list of video transcript topics and group them into meaningful clusters that would make sense for script generation and content organization.
 
 Guidelines:
 • Group related topics by theme, complexity level, or learning progression
 • Create clusters that tell a cohesive story or learning path
-• Each cluster should have 2-8 topics (avoid single-topic clusters)
 • Prioritize logical flow and content coherence over perfect balance
 • Consider if topics build upon each other or are standalone concepts
 • Look for natural groupings like: Introduction/Basics, Core Concepts, Advanced Techniques, Implementation, etc.
 
 For each cluster:
-• Choose a clear, descriptive name (2-4 words)
+• Choose a clear, descriptive name (2-8 words)
 • Provide a brief description of what the cluster covers
-• Assign a display order (1-6) for logical presentation sequence
+• Assign a display order (1,2,3...) for logical presentation sequence
 • For each topic assignment, briefly explain why it fits in that cluster
 
 Output as JSON with this exact structure:
