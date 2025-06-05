@@ -1,16 +1,36 @@
 ﻿namespace VideoScripts.Features.AnalyzeClusters;
 
+/// <summary>
+/// Configuration for cluster analysis prompts and AI model settings
+/// </summary>
 public static class Prompts
 {
     /// <summary>
-    /// Cluster Readiness Assessment Prompt (Cluster Readiness Score): 
-    /// Some clusters might have complete narrative arcs while others are just collections of related points
+    /// Configuration for cluster readiness analysis
     /// </summary>
-    /// <returns></returns>
-    public static string ClusterReadiness() => @"
-You are an expert content strategist analyzing video transcript clusters for script development potential.
+    public static class ClusterReadiness
+    {
+        /// <summary>
+        /// AI model configuration for readiness analysis
+        /// </summary>
+        public static class ModelConfig
+        {
+            public const string Model = "gpt-4o-mini";
+            public const int MaxTokens = 4000;
+            public const double Temperature = 0.1;
+            public const string ResponseFormat = "json_object";
 
-I will provide you with a cluster of related topics from YouTube video transcripts. Each topic includes:
+            /// <summary>
+            /// System message that defines the AI's role for readiness analysis
+            /// </summary>
+            public const string SystemMessage = "You are an expert content strategist analyzing video transcript clusters for script development potential. You must respond with ONLY valid JSON in the exact format specified.";
+        }
+
+        /// <summary>
+        /// The prompt template for cluster readiness analysis
+        /// Use {CLUSTER_DATA} placeholder for cluster data replacement
+        /// </summary>
+        public const string PromptTemplate = @"I will provide you with a cluster of related topics from YouTube video transcripts. Each topic includes:
 - Title, Summary, Content details, Blueprint elements (if any), Start time from original video
 
 Your task is to evaluate this cluster's ""script readiness"" by analyzing narrative completeness, structural coherence, and identifying missing elements.
@@ -56,17 +76,45 @@ Return your analysis as a JSON object with this exact structure:
 Provide actionable insights for script development while maintaining focus on educational video content.
 
 Cluster data:
-[INSERT CLUSTER DATA HERE]";
+{CLUSTER_DATA}";
+
+        /// <summary>
+        /// Gets the formatted prompt with cluster data replacement
+        /// </summary>
+        /// <param name="clusterData">The cluster data to insert into the prompt</param>
+        /// <returns>Complete formatted prompt</returns>
+        public static string GetFormattedPrompt(string clusterData)
+        {
+            return PromptTemplate.Replace("{CLUSTER_DATA}", clusterData);
+        }
+    }
 
     /// <summary>
-    /// Content Density Analysis
-    /// Measure depth vs breadth - is this cluster exploration-heavy or action-heavy?
+    /// Configuration for content density analysis
     /// </summary>
-    /// <returns></returns>
-    public static string ContentDensity() => @"
-You are a content analyst specializing in educational video scripts.
+    public static class ContentDensity
+    {
+        /// <summary>
+        /// AI model configuration for density analysis
+        /// </summary>
+        public static class ModelConfig
+        {
+            public const string Model = "gpt-4o-mini";
+            public const int MaxTokens = 4000;
+            public const double Temperature = 0.1;
+            public const string ResponseFormat = "json_object";
 
-Analyze the following cluster of video topics for content density and depth. Evaluate information density, pacing implications, and cognitive load.
+            /// <summary>
+            /// System message that defines the AI's role for density analysis
+            /// </summary>
+            public const string SystemMessage = "You are a content analyst specializing in educational video scripts. You must respond with ONLY valid JSON in the exact format specified.";
+        }
+
+        /// <summary>
+        /// The prompt template for content density analysis
+        /// Use {CLUSTER_DATA} placeholder for cluster data replacement
+        /// </summary>
+        public const string PromptTemplate = @"Analyze the following cluster of video topics for content density and depth. Evaluate information density, pacing implications, and cognitive load.
 
 **CRITICAL: You must respond with ONLY valid JSON in the exact format specified below. No additional text, explanations, or markdown formatting.**
 
@@ -112,17 +160,45 @@ Return your analysis as a JSON object with this exact structure:
 Focus on practical implications for video script development and viewer experience.
 
 Cluster data:
-[INSERT CLUSTER DATA HERE]";
+{CLUSTER_DATA}";
+
+        /// <summary>
+        /// Gets the formatted prompt with cluster data replacement
+        /// </summary>
+        /// <param name="clusterData">The cluster data to insert into the prompt</param>
+        /// <returns>Complete formatted prompt</returns>
+        public static string GetFormattedPrompt(string clusterData)
+        {
+            return PromptTemplate.Replace("{CLUSTER_DATA}", clusterData);
+        }
+    }
 
     /// <summary>
-    /// Structural Elements Extraction Prompt
-    /// Which clusters contain the most frameworks/blueprints that could anchor a script?
+    /// Configuration for structural elements analysis
     /// </summary>
-    /// <returns></returns>
-    public static string StructuralElements() => @"
-You are a script development specialist focusing on instructional design.
+    public static class StructuralElements
+    {
+        /// <summary>
+        /// AI model configuration for structural analysis
+        /// </summary>
+        public static class ModelConfig
+        {
+            public const string Model = "gpt-4o-mini";
+            public const int MaxTokens = 4000;
+            public const double Temperature = 0.1;
+            public const string ResponseFormat = "json_object";
 
-Examine this cluster for structural elements that could anchor a video script. Identify frameworks, processes, lists, and blueprint elements.
+            /// <summary>
+            /// System message that defines the AI's role for structural analysis
+            /// </summary>
+            public const string SystemMessage = "You are a script development specialist focusing on instructional design. You must respond with ONLY valid JSON in the exact format specified.";
+        }
+
+        /// <summary>
+        /// The prompt template for structural elements analysis
+        /// Use {CLUSTER_DATA} placeholder for cluster data replacement
+        /// </summary>
+        public const string PromptTemplate = @"Examine this cluster for structural elements that could anchor a video script. Identify frameworks, processes, lists, and blueprint elements.
 
 **CRITICAL: You must respond with ONLY valid JSON in the exact format specified below. No additional text, explanations, or markdown formatting.**
 
@@ -195,5 +271,16 @@ Look for elements that could serve as:
 Focus on elements that would make the script more engaging, organized, and valuable to viewers.
 
 Cluster data:
-[INSERT CLUSTER DATA HERE]";
+{CLUSTER_DATA}";
+
+        /// <summary>
+        /// Gets the formatted prompt with cluster data replacement
+        /// </summary>
+        /// <param name="clusterData">The cluster data to insert into the prompt</param>
+        /// <returns>Complete formatted prompt</returns>
+        public static string GetFormattedPrompt(string clusterData)
+        {
+            return PromptTemplate.Replace("{CLUSTER_DATA}", clusterData);
+        }
+    }
 }

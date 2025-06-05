@@ -44,12 +44,12 @@ public class TopicDiscoveryService
                 return CreateFailedResult("Transcript is empty or null", videoId, videoTitle);
             }
 
-            _logger.LogInformation($"Analyzing transcript for topic discovery: {videoTitle} ({videoId})");
+            _logger.LogInformation($"Analyzing transcript for topic discovery: {videoTitle} ({videoId}) using model: {Prompts.TopicDiscovery.ModelConfig.Model}");
 
             // Process transcript for API consumption
             var processedTranscript = ProcessTranscriptForApi(transcript);
 
-            // Create the analysis request
+            // Create the analysis request using centralized configuration
             var request = CreateTopicDiscoveryRequest(processedTranscript);
 
             // Send request to OpenAI
@@ -82,23 +82,30 @@ public class TopicDiscoveryService
     }
 
     /// <summary>
-    /// Creates the OpenAI API request with the topic discovery prompt
+    /// Creates the OpenAI API request using centralized prompt configuration
     /// </summary>
     private TopicDiscoveryOpenAiRequest CreateTopicDiscoveryRequest(string transcript)
     {
-        var systemPrompt = GetTopicDiscoveryPrompt();
-        var userPrompt = $"Transcript to analyze:\n\n{transcript}";
+        var prompt = Prompts.TopicDiscovery.GetFormattedPrompt(transcript);
 
         return new TopicDiscoveryOpenAiRequest
         {
-            Model = "gpt-4o-mini", // Changed from "gpt-4" to "gpt-4o-mini"
+            Model = Prompts.TopicDiscovery.ModelConfig.Model,
             Messages = new List<TopicDiscoveryOpenAiMessage>
             {
-                new TopicDiscoveryOpenAiMessage { Role = "system", Content = systemPrompt },
-                new TopicDiscoveryOpenAiMessage { Role = "user", Content = userPrompt }
+                new TopicDiscoveryOpenAiMessage
+                {
+                    Role = "system",
+                    Content = Prompts.TopicDiscovery.ModelConfig.SystemMessage
+                },
+                new TopicDiscoveryOpenAiMessage
+                {
+                    Role = "user",
+                    Content = prompt
+                }
             },
-            MaxTokens = 3000, // Reduced from 4000 - gpt-4o-mini is more efficient
-            Temperature = 0.2, // Keeping low temperature for consistent output
+            MaxTokens = Prompts.TopicDiscovery.ModelConfig.MaxTokens,
+            Temperature = Prompts.TopicDiscovery.ModelConfig.Temperature,
             ResponseFormat = new TopicDiscoveryOpenAiResponseFormat { Type = "json_object" }
         };
     }
@@ -200,44 +207,6 @@ public class TopicDiscoveryService
             _logger.LogError(ex, $"Error parsing OpenAI response: {ex.Message}");
             return CreateFailedResult($"Failed to parse response: {ex.Message}", videoId, videoTitle);
         }
-    }
-
-    /// <summary>
-    /// Gets the optimized topic discovery prompt for GPT-4o-mini
-    /// </summary>
-    private string GetTopicDiscoveryPrompt()
-    {
-        return @"You are a content strategist specializing in breaking down educational videos into structured learning modules.
-
-Analyze the YouTube transcript and identify distinct topics, sections, and key learning points. Focus on main content - skip intros, promotions, and conclusions.
-
-Key Requirements:
-• Identify natural topic transitions and thematic changes
-• Extract frameworks, blueprints, or step-by-step processes
-• Capture actionable insights and key takeaways  
-• Use clear timestamps for each section
-• Focus on valuable, educational content
-
-Output as JSON with this exact structure:
-
-{
-  ""topics"": [
-    {
-      ""starttime"": ""HH:MM:SS"",
-      ""title"": ""Clear, descriptive section title"",
-      ""summary"": ""1-2 sentence overview of what's covered"",
-      ""content"": ""Detailed breakdown including key points, steps, or concepts"",
-      ""blueprint_elements"": [""step 1"", ""step 2""] // Array of steps/elements if applicable, empty array otherwise
-    }
-  ]
-}
-
-Guidelines:
-• Use HH:MM:SS format for timestamps (00:00:00 if unclear)
-• Extract numbered steps or frameworks explicitly
-• Maintain speaker's original terminology for technical concepts
-• Prioritize actionable, educational content
-• Ensure each topic has clear value for learners";
     }
 
     /// <summary>
