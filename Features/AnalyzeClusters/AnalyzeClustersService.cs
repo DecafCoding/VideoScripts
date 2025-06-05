@@ -49,7 +49,7 @@ public class AnalyzeClustersService
             // Build cluster data for analysis
             var clusterData = BuildClusterDataForAnalysis(cluster);
 
-            // Run all three analyses
+            // Run all three analyses concurrently
             var readinessTask = PerformReadinessAnalysisAsync(clusterData);
             var densityTask = PerformDensityAnalysisAsync(clusterData);
             var structuralTask = PerformStructuralAnalysisAsync(clusterData);
@@ -85,22 +85,26 @@ public class AnalyzeClustersService
     }
 
     /// <summary>
-    /// Performs cluster readiness analysis
+    /// Performs cluster readiness analysis using centralized prompt configuration
     /// </summary>
     private async Task<ClusterReadinessAnalysis?> PerformReadinessAnalysisAsync(string clusterData)
     {
-        var response = string.Empty;
-
         try
         {
-            var prompt = Prompts.ClusterReadiness().Replace("[INSERT CLUSTER DATA HERE]", clusterData);
-            response = await CallOpenAiApiAsync(prompt, "readiness");
+            var prompt = Prompts.ClusterReadiness.GetFormattedPrompt(clusterData);
+            var response = await CallOpenAiApiAsync(
+                prompt,
+                Prompts.ClusterReadiness.ModelConfig.SystemMessage,
+                Prompts.ClusterReadiness.ModelConfig.Model,
+                Prompts.ClusterReadiness.ModelConfig.MaxTokens,
+                Prompts.ClusterReadiness.ModelConfig.Temperature,
+                Prompts.ClusterReadiness.ModelConfig.ResponseFormat,
+                "readiness");
 
             if (response != null)
             {
                 var analysis = JsonConvert.DeserializeObject<ClusterReadinessAnalysis>(response);
 
-                // Validate the analysis has required fields
                 if (analysis != null && ValidateReadinessAnalysis(analysis))
                 {
                     return analysis;
@@ -113,7 +117,7 @@ public class AnalyzeClustersService
         }
         catch (JsonException jsonEx)
         {
-            _logger.LogError(jsonEx, "Failed to parse readiness analysis JSON: {Response}", response);
+            _logger.LogError(jsonEx, "Failed to parse readiness analysis JSON");
         }
         catch (Exception ex)
         {
@@ -124,22 +128,26 @@ public class AnalyzeClustersService
     }
 
     /// <summary>
-    /// Performs content density analysis
+    /// Performs content density analysis using centralized prompt configuration
     /// </summary>
     private async Task<ContentDensityAnalysis?> PerformDensityAnalysisAsync(string clusterData)
     {
-        var response = string.Empty;
-
         try
         {
-            var prompt = Prompts.ContentDensity().Replace("[INSERT CLUSTER DATA HERE]", clusterData);
-            response = await CallOpenAiApiAsync(prompt, "density");
+            var prompt = Prompts.ContentDensity.GetFormattedPrompt(clusterData);
+            var response = await CallOpenAiApiAsync(
+                prompt,
+                Prompts.ContentDensity.ModelConfig.SystemMessage,
+                Prompts.ContentDensity.ModelConfig.Model,
+                Prompts.ContentDensity.ModelConfig.MaxTokens,
+                Prompts.ContentDensity.ModelConfig.Temperature,
+                Prompts.ContentDensity.ModelConfig.ResponseFormat,
+                "density");
 
             if (response != null)
             {
                 var analysis = JsonConvert.DeserializeObject<ContentDensityAnalysis>(response);
 
-                // Validate the analysis has required fields
                 if (analysis != null && ValidateDensityAnalysis(analysis))
                 {
                     return analysis;
@@ -152,7 +160,7 @@ public class AnalyzeClustersService
         }
         catch (JsonException jsonEx)
         {
-            _logger.LogError(jsonEx, "Failed to parse density analysis JSON: {Response}", response);
+            _logger.LogError(jsonEx, "Failed to parse density analysis JSON");
         }
         catch (Exception ex)
         {
@@ -163,22 +171,26 @@ public class AnalyzeClustersService
     }
 
     /// <summary>
-    /// Performs structural elements analysis
+    /// Performs structural elements analysis using centralized prompt configuration
     /// </summary>
     private async Task<StructuralElementsAnalysis?> PerformStructuralAnalysisAsync(string clusterData)
     {
-        var response = string.Empty;
-
         try
         {
-            var prompt = Prompts.StructuralElements().Replace("[INSERT CLUSTER DATA HERE]", clusterData);
-            response = await CallOpenAiApiAsync(prompt, "structural");
+            var prompt = Prompts.StructuralElements.GetFormattedPrompt(clusterData);
+            var response = await CallOpenAiApiAsync(
+                prompt,
+                Prompts.StructuralElements.ModelConfig.SystemMessage,
+                Prompts.StructuralElements.ModelConfig.Model,
+                Prompts.StructuralElements.ModelConfig.MaxTokens,
+                Prompts.StructuralElements.ModelConfig.Temperature,
+                Prompts.StructuralElements.ModelConfig.ResponseFormat,
+                "structural");
 
             if (response != null)
             {
                 var analysis = JsonConvert.DeserializeObject<StructuralElementsAnalysis>(response);
 
-                // Validate the analysis has required fields
                 if (analysis != null && ValidateStructuralAnalysis(analysis))
                 {
                     return analysis;
@@ -191,7 +203,7 @@ public class AnalyzeClustersService
         }
         catch (JsonException jsonEx)
         {
-            _logger.LogError(jsonEx, "Failed to parse structural analysis JSON: {Response}", response);
+            _logger.LogError(jsonEx, "Failed to parse structural analysis JSON");
         }
         catch (Exception ex)
         {
@@ -242,30 +254,44 @@ public class AnalyzeClustersService
     }
 
     /// <summary>
-    /// Calls OpenAI API with the specified prompt
+    /// Calls OpenAI API with the specified configuration
     /// </summary>
-    private async Task<string?> CallOpenAiApiAsync(string prompt, string analysisType)
+    private async Task<string?> CallOpenAiApiAsync(
+        string userPrompt,
+        string systemMessage,
+        string model,
+        int maxTokens,
+        double temperature,
+        string responseFormat,
+        string analysisType)
     {
         try
         {
             var request = new AnalyzeClustersOpenAiRequest
             {
-                Model = "gpt-4o-mini",
+                Model = model,
                 Messages = new List<AnalyzeClustersOpenAiMessage>
                 {
                     new AnalyzeClustersOpenAiMessage
                     {
+                        Role = "system",
+                        Content = systemMessage
+                    },
+                    new AnalyzeClustersOpenAiMessage
+                    {
                         Role = "user",
-                        Content = prompt
+                        Content = userPrompt
                     }
                 },
-                MaxTokens = 4000, // Increased for more detailed JSON responses
-                Temperature = 0.1, // Lower temperature for more consistent JSON structure
-                ResponseFormat = new AnalyzeClustersOpenAiResponseFormat { Type = "json_object" }
+                MaxTokens = maxTokens,
+                Temperature = temperature,
+                ResponseFormat = new AnalyzeClustersOpenAiResponseFormat { Type = responseFormat }
             };
 
             var jsonRequest = JsonConvert.SerializeObject(request);
             var content = new StringContent(jsonRequest, Encoding.UTF8, "application/json");
+
+            _logger.LogInformation($"Calling OpenAI API for {analysisType} analysis using model: {model}");
 
             var response = await _httpClient.PostAsync(OpenAiApiUrl, content);
 

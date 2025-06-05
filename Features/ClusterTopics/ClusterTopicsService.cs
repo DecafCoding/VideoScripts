@@ -43,9 +43,9 @@ public class ClusterTopicsService
                 return CreateFailedResult("No topics provided for clustering", projectName);
             }
 
-            _logger.LogInformation($"Analyzing {topics.Count} topics for clustering in project: {projectName}");
+            _logger.LogInformation($"Analyzing {topics.Count} topics for clustering in project: {projectName} using model: {Prompts.ClusterTopics.ModelConfig.Model}");
 
-            // Create the clustering request
+            // Create the clustering request using centralized configuration
             var request = CreateClusteringRequest(topics, projectName);
 
             // Send request to OpenAI
@@ -61,7 +61,7 @@ public class ClusterTopicsService
 
             if (clusterResult.Success)
             {
-                _logger.LogInformation($"Successfully clustered topics for project: {projectName} - Created {clusterResult.Clusters.Count} clusters");
+                _logger.LogInformation($"Successfully clustered topics for project: {projectName} - Created {clusterResult.Clusters.Count} clusters (Model: {Prompts.ClusterTopics.ModelConfig.Model})");
             }
             else
             {
@@ -78,53 +78,33 @@ public class ClusterTopicsService
     }
 
     /// <summary>
-    /// Creates the OpenAI API request with the topic clustering prompt
+    /// Creates the OpenAI API request using centralized prompt and model configuration
     /// </summary>
     private ClusterTopicsOpenAiRequest CreateClusteringRequest(List<TranscriptTopicEntity> topics, string projectName)
     {
-        var systemPrompt = GetClusteringPrompt();
-        var userPrompt = BuildTopicsAnalysisPrompt(topics, projectName);
+        // Get the formatted prompt using the centralized configuration
+        var userPrompt = Prompts.ClusterTopics.GetFormattedPrompt(projectName, topics);
 
         return new ClusterTopicsOpenAiRequest
         {
-            Model = "gpt-4o-mini",
+            Model = Prompts.ClusterTopics.ModelConfig.Model,
             Messages = new List<ClusterTopicsOpenAiMessage>
             {
-                new ClusterTopicsOpenAiMessage { Role = "system", Content = systemPrompt },
-                new ClusterTopicsOpenAiMessage { Role = "user", Content = userPrompt }
+                new ClusterTopicsOpenAiMessage
+                {
+                    Role = "system",
+                    Content = Prompts.ClusterTopics.ModelConfig.SystemMessage
+                },
+                new ClusterTopicsOpenAiMessage
+                {
+                    Role = "user",
+                    Content = userPrompt
+                }
             },
-            MaxTokens = 3000,
-            Temperature = 0.2,
+            MaxTokens = Prompts.ClusterTopics.ModelConfig.MaxTokens,
+            Temperature = Prompts.ClusterTopics.ModelConfig.Temperature,
             ResponseFormat = new ClusterTopicsOpenAiResponseFormat { Type = "json_object" }
         };
-    }
-
-    /// <summary>
-    /// Builds the user prompt with topic data for analysis
-    /// </summary>
-    private string BuildTopicsAnalysisPrompt(List<TranscriptTopicEntity> topics, string projectName)
-    {
-        var prompt = new StringBuilder();
-        prompt.AppendLine($"Project: {projectName}");
-        prompt.AppendLine($"Total Topics to Cluster: {topics.Count}");
-        prompt.AppendLine();
-        prompt.AppendLine("Topics to analyze and cluster:");
-
-        for (int i = 0; i < topics.Count; i++)
-        {
-            var topic = topics[i];
-            prompt.AppendLine($"{i}: {topic.Title}");
-            prompt.AppendLine($"   Summary: {topic.TopicSummary}");
-
-            // Include blueprint elements if available
-            if (!string.IsNullOrWhiteSpace(topic.BluePrintElements))
-            {
-                prompt.AppendLine($"   Blueprint: {topic.BluePrintElements}");
-            }
-            prompt.AppendLine();
-        }
-
-        return prompt.ToString();
     }
 
     /// <summary>
@@ -234,57 +214,6 @@ public class ClusterTopicsService
             _logger.LogError(ex, $"Error parsing OpenAI response: {ex.Message}");
             return CreateFailedResult($"Failed to parse response: {ex.Message}", projectName);
         }
-    }
-
-    /// <summary>
-    /// Gets the topic clustering prompt for OpenAI
-    /// </summary>
-    private string GetClusteringPrompt()
-    {
-        return @"You are an expert content strategist specializing in organizing educational content into logical learning modules.
-
-Your task is to analyze a list of video transcript topics and group them into meaningful clusters that would make sense for script generation and content organization.
-
-Guidelines:
-• Group related topics by theme, complexity level, or learning progression
-• Create clusters that tell a cohesive story or learning path
-• Prioritize logical flow and content coherence over perfect balance
-• Consider if topics build upon each other or are standalone concepts
-• Look for natural groupings like: Introduction/Basics, Core Concepts, Advanced Techniques, Implementation, etc.
-
-For each cluster:
-• Choose a clear, descriptive name (2-8 words)
-• Provide a brief description of what the cluster covers
-• Assign a display order (1,2,3...) for logical presentation sequence
-• For each topic assignment, briefly explain why it fits in that cluster
-
-Output as JSON with this exact structure:
-
-{
-  ""clusters"": [
-    {
-      ""cluster_name"": ""Introduction & Basics"",
-      ""cluster_description"": ""Foundational concepts and getting started"",
-      ""display_order"": 1,
-      ""topics"": [
-        {
-          ""topic_index"": 0,
-          ""assignment_reason"": ""Foundational concept that others build upon""
-        },
-        {
-          ""topic_index"": 3,
-          ""assignment_reason"": ""Basic setup information""
-        }
-      ]
-    }
-  ]
-}
-
-Important:
-• Use topic_index to reference topics (0-based index from the provided list)
-• Ensure every topic is assigned to exactly one cluster
-• Keep cluster names concise but descriptive
-• Focus on creating a logical learning progression";
     }
 
     /// <summary>

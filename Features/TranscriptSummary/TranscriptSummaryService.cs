@@ -43,12 +43,12 @@ public class TranscriptSummaryService
                 return CreateFailedResult("Transcript is empty or null", videoId, videoTitle);
             }
 
-            _logger.LogInformation($"Analyzing transcript for video: {videoTitle} ({videoId})");
+            _logger.LogInformation($"Analyzing transcript for video: {videoTitle} ({videoId}) using model: {Prompts.AnalyzeTranscript.ModelConfig.Model}");
 
             // Truncate transcript if too long (OpenAI has token limits)
             var processedTranscript = TruncateTranscriptIfNeeded(transcript);
 
-            // Create the analysis request
+            // Create the analysis request using centralized configuration
             var request = CreateAnalysisRequest(processedTranscript);
 
             // Send request to OpenAI
@@ -64,7 +64,7 @@ public class TranscriptSummaryService
 
             if (summaryResult.Success)
             {
-                _logger.LogInformation($"Successfully analyzed transcript for video: {videoTitle}");
+                _logger.LogInformation($"Successfully analyzed transcript for video: {videoTitle} using {Prompts.AnalyzeTranscript.ModelConfig.Model}");
             }
             else
             {
@@ -81,23 +81,30 @@ public class TranscriptSummaryService
     }
 
     /// <summary>
-    /// Creates the OpenAI API request with the analysis prompt
+    /// Creates the OpenAI API request with the analysis prompt using centralized configuration
     /// </summary>
     private OpenAiRequest CreateAnalysisRequest(string transcript)
     {
-        var systemPrompt = GetAnalysisPrompt();
-        var userPrompt = $"Please analyze the following YouTube video transcript:\n\n{transcript}";
+        var formattedPrompt = Prompts.AnalyzeTranscript.GetFormattedPrompt(transcript);
 
         return new OpenAiRequest
         {
-            Model = "gpt-4o-mini",
+            Model = Prompts.AnalyzeTranscript.ModelConfig.Model,
             Messages = new List<OpenAiMessage>
             {
-                new OpenAiMessage { Role = "system", Content = systemPrompt },
-                new OpenAiMessage { Role = "user", Content = userPrompt }
+                new OpenAiMessage
+                {
+                    Role = "system",
+                    Content = Prompts.AnalyzeTranscript.ModelConfig.SystemMessage
+                },
+                new OpenAiMessage
+                {
+                    Role = "user",
+                    Content = formattedPrompt
+                }
             },
-            MaxTokens = 1500,
-            Temperature = 0.3,
+            MaxTokens = Prompts.AnalyzeTranscript.ModelConfig.MaxTokens,
+            Temperature = Prompts.AnalyzeTranscript.ModelConfig.Temperature,
             ResponseFormat = new OpenAiResponseFormat { Type = "json_object" }
         };
     }
@@ -180,62 +187,6 @@ public class TranscriptSummaryService
             _logger.LogError(ex, $"Error parsing OpenAI response: {ex.Message}");
             return CreateFailedResult($"Failed to parse response: {ex.Message}", videoId, videoTitle);
         }
-    }
-
-    /// <summary>
-    /// Gets the analysis prompt for the OpenAI API
-    /// </summary>
-    private string GetAnalysisPrompt()
-    {
-        return @"**Role**: Act as an expert content analyst who specializes in distilling complex video content into clear, actionable summaries.
-
-**Task**: Analyze the provided YouTube video transcript and create a comprehensive summary that captures the key insights and structural elements.
-
-Summary Requirements:
-**Length**: Provide a summary of 2-3 paragraphs, expanding to more paragraphs only if the content contains particularly important or complex information that warrants additional detail.
-
-**Content Focus**:
-* Summarize the main topic, key arguments, and primary takeaways
-* Capture the overall value proposition or purpose of the video
-
-**Structural Elements to Highlight**: When present in the video, specifically mention if it includes:
-* **Blueprints** or step-by-step plans
-* **Frameworks** or systematic approaches
-* **Numbered lists** (e.g., ""5 Ways to..."", ""10 Steps for..."")
-* **Checklists** or action items
-* **Templates** or models
-* **Methodologies** or processes
-* **Case studies** or examples
-* **Before/after scenarios**
-
-**Format**:
-1. **Video Topic** (1-2 sentences based on your review of the transcript)
-2. **Main Summary** (2-3 paragraphs covering the core content)
-3. **Structured Content** (if applicable): Brief note about any blueprints, frameworks, or lists mentioned above
-
-Important Guidelines:
-* Focus on concepts and high-level insights rather than specific details
-* Don't reproduce exact steps or detailed instructions
-* Mention the presence of structured content without detailing every point
-* Keep the tone professional yet accessible
-* If the video lacks substantial content, note this appropriately
-
-**Example Structure**: ""This video discusses [main topic] and provides [type of guidance] for [target audience]. The presenter covers [key themes/arguments] and explains [primary value/outcome]. [Additional context about approach or unique angle].
-
-[Second paragraph with supporting details, methodology, or additional insights if substantial content warrants it].
-
-**Structured Elements**: The video includes a [X]-step framework/blueprint/checklist for [purpose], along with [other structured content if present].""
-
-Final Output Format:
-Return your summary as a JSON object with the following structure:
-
-```json
-{
-  ""video_topic"": ""Main topic/subject of the video"",
-  ""main_summary"": ""2-3 paragraph summary of the video content"",
-  ""structured_content"": ""Brief description of what structured elements are present""
-}
-```";
     }
 
     /// <summary>
